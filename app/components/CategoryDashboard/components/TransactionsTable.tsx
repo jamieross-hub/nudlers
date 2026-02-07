@@ -1,0 +1,1221 @@
+import React from 'react';
+import { logger } from '../../../utils/client-logger';
+import { useTheme } from '@mui/material/styles';
+import { Table, TableBody, TableCell, TableHead, TableRow, Paper, Box, Typography, IconButton, TextField, Autocomplete, Snackbar, Alert, FormControlLabel, Checkbox, Tooltip, TableSortLabel, useMediaQuery } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
+import { formatNumber } from '../utils/formatUtils';
+import { dateUtils } from '../utils/dateUtils';
+import { useCategories } from '../utils/useCategories';
+import { useCardVendors } from '../utils/useCardVendors';
+import { CardVendorIcon } from '../../CardVendorsModal';
+import { getTableHeaderCellStyle, getTableBodyCellStyle, TABLE_ROW_HOVER_STYLE, getTableRowHoverBackground } from '../utils/tableStyles';
+import DeleteConfirmationDialog from '../../DeleteConfirmationDialog';
+import CategoryAutocomplete from '../../CategoryAutocomplete';
+import AccountDisplay from '../../AccountDisplay';
+import MobileSortableTable, { SortOption } from '../../MobileSortableTable';
+
+export interface Transaction {
+  name: string;
+  price: number;
+  date: string;
+  category: string;
+  identifier: string;
+  vendor: string;
+  installments_number?: number;
+  installments_total?: number;
+  vendor_nickname?: string;
+  original_amount?: number;
+  original_currency?: string;
+  charged_currency?: string;
+  account_number?: string;
+  processed_date?: string;
+}
+
+export interface TransactionsTableProps {
+  transactions: Transaction[];
+  isLoading?: boolean;
+  onDelete?: (transaction: Transaction) => void;
+  onUpdate?: (transaction: Transaction, newPrice: number, newCategory?: string) => void;
+  groupByDate?: boolean;
+  disableWrapper?: boolean;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  onSort?: (field: string) => void;
+  hideActions?: boolean;
+  hideInstallmentsColumn?: boolean;
+  showProcessedDate?: boolean;
+}
+
+const TransactionsTable: React.FC<TransactionsTableProps> = ({
+  transactions,
+  isLoading,
+  onDelete,
+  onUpdate,
+  groupByDate,
+  disableWrapper,
+  sortBy,
+  sortOrder,
+  onSort,
+  hideActions,
+  hideInstallmentsColumn,
+  showProcessedDate = false
+}) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null);
+  const [editPrice, setEditPrice] = React.useState<string>('');
+  const [editCategory, setEditCategory] = React.useState<string>('');
+  const [applyToAll, setApplyToAll] = React.useState<boolean>(false);
+  const { categories: availableCategories } = useCategories();
+  const { getCardVendor, getCardNickname } = useCardVendors();
+  const [snackbar, setSnackbar] = React.useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
+  const [confirmDeleteTransaction, setConfirmDeleteTransaction] = React.useState<Transaction | null>(null);
+
+
+  const handleDeleteClick = React.useCallback(() => {
+    if (!confirmDeleteTransaction) return;
+
+    try {
+      onDelete?.(confirmDeleteTransaction);
+      setSnackbar({
+        open: true,
+        message: 'Transaction deleted successfully',
+        severity: 'success'
+      });
+    } catch (error) {
+      logger.error('Error deleting transaction', error as Error);
+      setSnackbar({
+        open: true,
+        message: 'Error deleting transaction',
+        severity: 'error'
+      });
+    }
+  }, [confirmDeleteTransaction, onDelete]);
+
+
+  const handleEditClick = React.useCallback((transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setEditPrice(Math.abs(transaction.price).toString());
+    setEditCategory(transaction.category);
+    setApplyToAll(false); // Default to single transaction only
+  }, []);
+
+
+  const handleSaveClick = React.useCallback(async () => {
+    if (editingTransaction && editPrice) {
+      const newPrice = parseFloat(editPrice);
+      if (!isNaN(newPrice)) {
+        const priceWithSign = editingTransaction.price < 0 ? -newPrice : newPrice;
+        const categoryChanged = editCategory !== editingTransaction.category;
+        const priceChanged = priceWithSign !== editingTransaction.price;
+
+        try {
+          if (categoryChanged) {
+            if (applyToAll) {
+              // Apply to ALL matching transactions and create rule
+              const response = await fetch('/api/categories/update-by-description', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  description: editingTransaction.name,
+                  newCategory: editCategory,
+                  createRule: true
+                }),
+              });
+
+              if (response.ok) {
+                const result = await response.json();
+
+                // Show success message with count
+                const message = result.transactionsUpdated > 1
+                  ? `Updated ${result.transactionsUpdated} transactions with "${editingTransaction.name}" to "${editCategory}". Rule saved for future transactions.`
+                  : `Category updated to "${editCategory}". Rule saved for future transactions.`;
+
+                setSnackbar({
+                  open: true,
+                  message,
+                  severity: 'success'
+                });
+
+                // Also update price if it changed
+                if (priceChanged) {
+                  onUpdate?.(editingTransaction, priceWithSign);
+                }
+
+                // Trigger a refresh of the dashboard data
+                window.dispatchEvent(new CustomEvent('dataRefresh'));
+              } else {
+                setSnackbar({
+                  open: true,
+                  message: 'Failed to update category',
+                  severity: 'error'
+                });
+              }
+            } else {
+              // Apply to THIS transaction only - no rule created
+              const response = await fetch(`/api/transactions/${editingTransaction.identifier}|${editingTransaction.vendor}`, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  category: editCategory,
+                  ...(priceChanged && { price: priceWithSign })
+                }),
+              });
+
+              if (response.ok) {
+                setSnackbar({
+                  open: true,
+                  message: `Category updated to "${editCategory}" for this transaction only.`,
+                  severity: 'success'
+                });
+
+                // Trigger a refresh of the dashboard data
+                window.dispatchEvent(new CustomEvent('dataRefresh'));
+              } else {
+                setSnackbar({
+                  open: true,
+                  message: 'Failed to update transaction',
+                  severity: 'error'
+                });
+              }
+            }
+          } else if (priceChanged) {
+            // Only price changed, use the regular update callback
+            onUpdate?.(editingTransaction, priceWithSign, editCategory);
+          }
+        } catch (error) {
+          logger.error('Error updating transaction', error as Error);
+          setSnackbar({
+            open: true,
+            message: 'Error updating transaction',
+            severity: 'error'
+          });
+        }
+
+        setEditingTransaction(null);
+      }
+    }
+  }, [editingTransaction, editPrice, editCategory, applyToAll, onUpdate]);
+
+
+  const handleCancelClick = React.useCallback(() => {
+    setEditingTransaction(null);
+  }, []);
+
+
+  const handleRowClick = React.useCallback((transaction: Transaction) => {
+    // If clicking on a different row while editing, save the current changes
+    if (editingTransaction && editingTransaction.identifier !== transaction.identifier) {
+      handleSaveClick();
+    }
+  }, [editingTransaction, handleSaveClick]);
+
+
+  const handleTableClick = React.useCallback((e: React.MouseEvent) => {
+    // If clicking on the table background (not on a row), save current changes
+    if (editingTransaction && (e.target as HTMLElement).tagName === 'TABLE') {
+      handleSaveClick();
+    }
+  }, [editingTransaction, handleSaveClick]);
+
+
+  // Group transactions by date
+  const groupedTransactions = React.useMemo(() => {
+    if (!groupByDate) return { 'all': transactions };
+
+    const groups: { [date: string]: Transaction[] } = {};
+    transactions.forEach(transaction => {
+      // Use local date for grouping to match displayed row dates
+      const d = new Date(transaction.date);
+      const dateKey = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(transaction);
+    });
+    return groups;
+  }, [transactions, groupByDate]);
+
+  const sortedDates = React.useMemo(() => {
+    if (!groupByDate) return [];
+    return Object.keys(groupedTransactions).sort((a, b) => b.localeCompare(a)); // Descending date
+  }, [groupedTransactions, groupByDate]);
+
+  const formatDateHeader = (dateStr: string) => {
+    // dateStr is YYYY-MM-DD in local time
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const isToday = date.getTime() === today.getTime();
+    const isYesterday = date.getTime() === yesterday.getTime();
+
+    if (isToday) return 'Today';
+    if (isYesterday) return 'Yesterday';
+
+    return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  // Sort options for mobile sortable table
+  const mobileSortOptions: SortOption[] = React.useMemo(() => [
+    { id: 'date', label: 'Date', defaultDirection: 'desc' },
+    { id: 'price', label: 'Amount', defaultDirection: 'desc' },
+    { id: 'name', label: 'Name', defaultDirection: 'asc' },
+    { id: 'category', label: 'Category', defaultDirection: 'asc' },
+  ], []);
+
+  // Handle mobile sort change
+  const handleMobileSort = React.useCallback((field: string, direction: 'asc' | 'desc') => {
+    if (onSort) {
+      // If clicking same field, just call onSort to toggle
+      // If clicking different field, call onSort which will use new field with direction
+      onSort(field);
+    }
+  }, [onSort]);
+
+  if (isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', padding: '32px' }}>
+        <Typography>Loading transactions...</Typography>
+      </Box>
+    );
+  }
+
+  if (!transactions || transactions.length === 0) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', padding: '32px' }}>
+        <Typography>No transactions found</Typography>
+      </Box>
+    );
+  }
+
+  /* Column widths configuration */
+  const columnWidths = {
+    description: hideActions && hideInstallmentsColumn ? '45%' : '35%',
+    category: '15%',
+    amount: '12%',
+    installment: '8%',
+    card: hideActions && hideInstallmentsColumn ? '18%' : '12%',
+    processedDate: '10%',
+    date: '10%',
+    actions: '8%'
+  };
+
+  const tableHeaderBaseStyle = getTableHeaderCellStyle(theme);
+  const headerStyle = {
+    ...tableHeaderBaseStyle,
+    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 1)' : '#f8fafc'
+  };
+
+  const renderSortableHeader = (label: string, field: string, align: 'left' | 'right' = 'left', width?: string) => {
+    const isSorted = sortBy === field;
+    return (
+      <TableCell
+        align={align}
+        style={{
+          ...headerStyle,
+          cursor: onSort ? 'pointer' : 'default',
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          width: width,
+          padding: disableWrapper ? '8px 12px' : headerStyle.padding,
+          fontSize: disableWrapper ? '0.7rem' : headerStyle.fontSize
+        }}
+        sortDirection={isSorted ? sortOrder : false}
+      >
+        {onSort ? (
+          <TableSortLabel
+            active={isSorted}
+            direction={isSorted ? sortOrder : 'desc'}
+            onClick={() => onSort(field)}
+            sx={{
+              color: 'inherit !important',
+              '& .MuiTableSortLabel-icon': {
+                color: 'inherit !important',
+                opacity: isSorted ? 1 : 0.3
+              }
+            }}
+          >
+            {label}
+          </TableSortLabel>
+        ) : (
+          label
+        )}
+      </TableCell>
+    );
+  };
+
+
+
+  const Content = (
+    <Box sx={{ width: '100%' }}>
+      {isMobile ? (
+        onSort ? (
+          // Use MobileSortableTable when sorting is enabled
+          <MobileSortableTable
+            sortOptions={mobileSortOptions}
+            rows={transactions}
+            loading={isLoading}
+            emptyMessage="No transactions found"
+            sortField={sortBy || 'date'}
+            sortDirection={sortOrder || 'desc'}
+            onSort={handleMobileSort}
+            rowKey={(transaction) => `${transaction.identifier}-${transaction.vendor}`}
+            stickySort={true}
+            stickyOffset={0}
+            renderCard={(transaction) => (
+              <TransactionMobileCardContent
+                transaction={transaction}
+                theme={theme}
+                onEdit={() => handleEditClick(transaction)}
+                onDelete={() => setConfirmDeleteTransaction(transaction)}
+                getCardVendor={getCardVendor}
+                getCardNickname={getCardNickname}
+                showDate={!groupByDate}
+                isEditing={editingTransaction?.identifier === transaction.identifier}
+                editCategory={editCategory}
+                setEditCategory={setEditCategory}
+                availableCategories={availableCategories}
+                applyToAll={applyToAll}
+                setApplyToAll={setApplyToAll}
+                editPrice={editPrice}
+                setEditPrice={setEditPrice}
+                onSave={handleSaveClick}
+                onCancel={handleCancelClick}
+              />
+            )}
+          />
+        ) : (
+          // Fallback to original card list when sorting not available
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {groupByDate ? (
+              sortedDates.map(date => (
+                <Box key={date} sx={{ mb: 2 }}>
+                  <Typography sx={{
+                    fontWeight: 700,
+                    color: theme.palette.text.secondary,
+                    fontSize: '0.75rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    mb: 1,
+                    px: 1
+                  }}>
+                    {formatDateHeader(date)}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {groupedTransactions[date].map((transaction, index) => (
+                      <TransactionMobileCard
+                        key={`${transaction.identifier}-${index}`}
+                        transaction={transaction}
+                        theme={theme}
+                        onEdit={() => handleEditClick(transaction)}
+                        onDelete={() => setConfirmDeleteTransaction(transaction)}
+                        getCardVendor={getCardVendor}
+                        getCardNickname={getCardNickname}
+                        showDate={false}
+                        isEditing={editingTransaction?.identifier === transaction.identifier}
+                        editCategory={editCategory}
+                        setEditCategory={setEditCategory}
+                        availableCategories={availableCategories}
+                        applyToAll={applyToAll}
+                        setApplyToAll={setApplyToAll}
+                        editPrice={editPrice}
+                        setEditPrice={setEditPrice}
+                        onSave={handleSaveClick}
+                        onCancel={handleCancelClick}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              ))
+            ) : (
+              transactions.map((transaction, index) => (
+                <TransactionMobileCard
+                  key={index}
+                  transaction={transaction}
+                  theme={theme}
+                  onEdit={() => handleEditClick(transaction)}
+                  onDelete={() => setConfirmDeleteTransaction(transaction)}
+                  getCardVendor={getCardVendor}
+                  getCardNickname={getCardNickname}
+                  showDate={true}
+                  isEditing={editingTransaction?.identifier === transaction.identifier}
+                  editCategory={editCategory}
+                  setEditCategory={setEditCategory}
+                  availableCategories={availableCategories}
+                  applyToAll={applyToAll}
+                  setApplyToAll={setApplyToAll}
+                  editPrice={editPrice}
+                  setEditPrice={setEditPrice}
+                  onSave={handleSaveClick}
+                  onCancel={handleCancelClick}
+                />
+              ))
+            )}
+          </Box>
+        )
+      ) : (
+        <Table
+          onClick={handleTableClick}
+          size={disableWrapper ? "small" : "medium"}
+          stickyHeader
+        >
+          <TableHead>
+            <TableRow>
+              {renderSortableHeader('Description', 'name', 'left', columnWidths.description)}
+              {renderSortableHeader('Category', 'category', 'left', columnWidths.category)}
+              {renderSortableHeader('Amount', 'price', 'right', columnWidths.amount)}
+
+              {!hideInstallmentsColumn && (
+                <TableCell
+                  style={{
+                    ...headerStyle,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10,
+                    width: columnWidths.installment,
+                    padding: disableWrapper ? '8px 12px' : headerStyle.padding,
+                    fontSize: disableWrapper ? '0.7rem' : headerStyle.fontSize
+                  }}
+                >
+                  Inst.
+                </TableCell>
+              )}
+
+              {renderSortableHeader('Card', 'account_number', 'left', columnWidths.card)}
+              {showProcessedDate && renderSortableHeader('Proc. Date', 'processed_date', 'left', columnWidths.processedDate)}
+              {!groupByDate && renderSortableHeader('Date', 'date', 'left', columnWidths.date)}
+
+              {!hideActions && (
+                <TableCell
+                  align="right"
+                  style={{
+                    ...headerStyle,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10,
+                    width: columnWidths.actions,
+                    padding: disableWrapper ? '8px 12px' : headerStyle.padding,
+                    fontSize: disableWrapper ? '0.7rem' : headerStyle.fontSize
+                  }}
+                >
+                  Actions
+                </TableCell>
+              )}
+
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {groupByDate ? (
+              sortedDates.map(date => (
+                <React.Fragment key={date}>
+                  <TableRow sx={{
+                    backgroundColor: theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.95)' : 'rgba(241, 245, 249, 0.95)',
+                    position: 'sticky',
+                    top: disableWrapper ? 35 : 53, // Adjusted offset for widget mode to prevent overlap
+                    zIndex: 9,
+                    backdropFilter: 'blur(8px)'
+                  }}>
+                    <TableCell colSpan={4 + (!hideInstallmentsColumn ? 1 : 0) + (!hideActions ? 1 : 0) + (showProcessedDate ? 1 : 0)} sx={{
+                      padding: disableWrapper ? '4px 12px' : '8px 16px',
+                      fontWeight: 700,
+                      color: theme.palette.text.primary,
+                      fontSize: disableWrapper ? '11px' : '13px',
+                      borderBottom: `1px solid ${theme.palette.divider}`,
+                      backgroundColor: 'inherit'
+                    }}>
+                      {formatDateHeader(date)}
+                    </TableCell>
+                  </TableRow>
+                  {groupedTransactions[date].map((transaction, index) => (
+                    <TransactionRow
+                      key={`${transaction.identifier}-${index}`}
+                      transaction={transaction}
+                      theme={theme}
+                      editingTransaction={editingTransaction}
+                      editCategory={editCategory}
+                      setEditCategory={setEditCategory}
+                      availableCategories={availableCategories}
+                      applyToAll={applyToAll}
+                      setApplyToAll={setApplyToAll}
+                      handleRowClick={handleRowClick}
+                      handleEditClick={handleEditClick}
+                      editPrice={editPrice}
+                      setEditPrice={setEditPrice}
+                      handleSaveClick={handleSaveClick}
+                      handleCancelClick={handleCancelClick}
+                      setConfirmDeleteTransaction={setConfirmDeleteTransaction}
+                      getCardVendor={getCardVendor}
+                      getCardNickname={getCardNickname}
+                      isWidget={disableWrapper}
+                      hideActions={hideActions}
+                      hideInstallmentsColumn={hideInstallmentsColumn}
+                      showProcessedDate={showProcessedDate}
+                      groupByDate={true}
+                    />
+                  ))}
+                </React.Fragment>
+              ))
+            ) : (
+              transactions.map((transaction, index) => (
+                <TransactionRow
+                  key={index}
+                  transaction={transaction}
+                  theme={theme}
+                  editingTransaction={editingTransaction}
+                  editCategory={editCategory}
+                  setEditCategory={setEditCategory}
+                  availableCategories={availableCategories}
+                  applyToAll={applyToAll}
+                  setApplyToAll={setApplyToAll}
+                  handleRowClick={handleRowClick}
+                  handleEditClick={handleEditClick}
+                  editPrice={editPrice}
+                  setEditPrice={setEditPrice}
+                  handleSaveClick={handleSaveClick}
+                  handleCancelClick={handleCancelClick}
+                  setConfirmDeleteTransaction={setConfirmDeleteTransaction}
+                  getCardVendor={getCardVendor}
+                  getCardNickname={getCardNickname}
+                  isWidget={disableWrapper}
+                  hideActions={hideActions}
+                  hideInstallmentsColumn={hideInstallmentsColumn}
+                  showProcessedDate={showProcessedDate}
+                  groupByDate={false}
+                />
+              ))
+            )}
+          </TableBody>
+        </Table>
+      )}
+    </Box>
+  );
+
+  if (disableWrapper) {
+    return (
+      <Box sx={{ width: '100%', overflowX: 'auto' }}>
+
+        {Content}
+        {/* Snackbar and Dialog still needed */}
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={5000}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert
+            onClose={() => setSnackbar({ ...snackbar, open: false })}
+            severity={snackbar.severity}
+            sx={{ borderRadius: '12px' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+        <DeleteConfirmationDialog
+          open={!!confirmDeleteTransaction}
+          onClose={() => setConfirmDeleteTransaction(null)}
+          onConfirm={handleDeleteClick}
+          transaction={confirmDeleteTransaction}
+        />
+      </Box>
+    );
+  }
+
+  return (
+    <Paper sx={{
+      width: '100%',
+      overflowX: 'auto',
+      borderRadius: '24px',
+      background: theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.4)' : 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.95) 100%)',
+      backdropFilter: 'blur(8px)',
+      boxShadow: '0 2px 12px rgba(0, 0, 0, 0.04)',
+      border: `1px solid ${theme.palette.divider}`
+    }}>
+      {Content}
+
+
+      {/* Snackbar for feedback messages */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={5000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{
+            width: '100%',
+            borderRadius: '12px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
+          }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={!!confirmDeleteTransaction}
+        onClose={() => setConfirmDeleteTransaction(null)}
+        onConfirm={handleDeleteClick}
+        transaction={confirmDeleteTransaction}
+      />
+    </Paper>
+  );
+};
+
+import { Theme } from '@mui/material/styles';
+
+interface TransactionRowProps {
+  transaction: Transaction;
+  theme: Theme;
+  editingTransaction: Transaction | null;
+  editCategory: string;
+  setEditCategory: (val: string) => void;
+  availableCategories: string[];
+  applyToAll: boolean;
+  setApplyToAll: (val: boolean) => void;
+  handleRowClick: (t: Transaction) => void;
+  handleEditClick: (t: Transaction) => void;
+  editPrice: string;
+  setEditPrice: (val: string) => void;
+  handleSaveClick: () => void;
+  handleCancelClick: () => void;
+  setConfirmDeleteTransaction: (t: Transaction) => void;
+  getCardVendor: (accountNumber: string | undefined | null) => string | null;
+  getCardNickname: (accountNumber: string | undefined | null) => string | null | undefined;
+  isWidget?: boolean;
+  hideActions?: boolean;
+  hideInstallmentsColumn?: boolean;
+  showProcessedDate?: boolean;
+  groupByDate?: boolean;
+}
+
+const TransactionRow = React.memo(({
+  transaction,
+  theme,
+  editingTransaction,
+  editCategory,
+  setEditCategory,
+  availableCategories,
+  applyToAll,
+  setApplyToAll,
+  handleRowClick,
+  handleEditClick,
+  editPrice,
+  setEditPrice,
+  handleSaveClick,
+  handleCancelClick,
+  setConfirmDeleteTransaction,
+  getCardVendor,
+  getCardNickname,
+  isWidget,
+  hideActions,
+  hideInstallmentsColumn,
+  showProcessedDate,
+  groupByDate
+}: TransactionRowProps) => {
+  const cellStyle = {
+    ...getTableBodyCellStyle(theme),
+    fontSize: isWidget ? '0.75rem' : '0.875rem', // Smaller when widget
+    padding: isWidget ? '4px 12px' : '8px 16px' // Smaller padding when widget
+  };
+  return (
+    <TableRow
+      onClick={() => handleRowClick(transaction)}
+      style={TABLE_ROW_HOVER_STYLE}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = getTableRowHoverBackground(theme);
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent';
+      }}
+    >
+      <TableCell style={{
+        ...cellStyle,
+        maxWidth: isWidget ? '100px' : '300px', // Limit width
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
+      }} title={transaction.name}>
+        {transaction.name}
+      </TableCell>
+      <TableCell style={cellStyle}>
+        {editingTransaction?.identifier === transaction.identifier && !hideActions ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <CategoryAutocomplete
+              value={editCategory}
+              onChange={setEditCategory}
+              options={availableCategories}
+              applyToAll={applyToAll}
+              onApplyToAllChange={setApplyToAll}
+              showApplyToAll={editCategory !== editingTransaction.category}
+            />
+          </Box>
+        ) : (
+          <span
+            style={{
+              cursor: hideActions ? 'default' : 'pointer',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              transition: 'all 0.2s ease-in-out',
+              display: 'inline-block',
+              minWidth: '60px',
+              textAlign: 'center',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              color: '#3b82f6',
+              fontWeight: '400',
+              fontSize: isWidget ? '10px' : '13px'
+            }}
+            onClick={(e) => {
+              if (hideActions) return;
+              e.stopPropagation();
+              handleRowClick(transaction);
+              handleEditClick(transaction);
+            }}
+            onMouseEnter={(e) => {
+              if (hideActions) return;
+              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+              e.currentTarget.style.transform = 'scale(1.02)';
+            }}
+            onMouseLeave={(e) => {
+              if (hideActions) return;
+              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            {transaction.category}
+          </span>
+        )}
+      </TableCell>
+      <TableCell
+        align="right"
+        style={{
+          ...cellStyle,
+          color: transaction.price < 0 ? '#ef4444' : '#10b981',
+          fontWeight: 600
+        }}
+      >
+        {editingTransaction?.identifier === transaction.identifier && !hideActions ? (
+          <TextField
+            value={editPrice}
+            onChange={(e) => setEditPrice(e.target.value)}
+            size="small"
+            type="number"
+            inputProps={{
+              style: {
+                textAlign: 'right',
+                color: transaction.price < 0 ? '#F87171' : '#4ADE80'
+              }
+            }}
+            sx={{
+              width: '100px',
+              '& .MuiOutlinedInput-root': {
+                '& fieldset': {
+                  borderColor: transaction.price < 0 ? '#F87171' : '#4ADE80',
+                },
+              },
+            }}
+          />
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+            {(() => {
+              // Price is already the per-installment amount (combineInstallments: false)
+              const displayAmount = Math.abs(transaction.price);
+
+              // Check if original currency is different from ILS (foreign transaction)
+              const isForeignCurrency = transaction.original_currency &&
+                !['ILS', '₪', 'NIS'].includes(transaction.original_currency);
+
+              // Get the appropriate currency symbol
+              const getCurrencySymbol = (currency?: string) => {
+                if (!currency) return '₪';
+                if (['EUR', '€'].includes(currency)) return '€';
+                if (['USD', '$'].includes(currency)) return '$';
+                if (['GBP', '£'].includes(currency)) return '£';
+                if (['ILS', '₪', 'NIS'].includes(currency)) return '₪';
+                return currency + ' ';
+              };
+
+              // For foreign currency transactions, show ILS amount with original amount below
+              if (isForeignCurrency && transaction.original_amount) {
+                const symbol = getCurrencySymbol(transaction.original_currency);
+                // original_amount is also already the per-installment amount
+                const originalDisplayAmount = Math.abs(transaction.original_amount);
+
+                return (
+                  <>
+                    <span>₪{formatNumber(displayAmount)}</span>
+                    <span style={{
+                      fontSize: '11px',
+                      color: theme.palette.text.secondary
+                    }}>
+                      ({symbol}{formatNumber(originalDisplayAmount)})
+                    </span>
+                  </>
+                );
+              }
+
+              return <span>₪{formatNumber(displayAmount)}</span>;
+            })()}
+            {hideInstallmentsColumn && transaction.installments_total && transaction.installments_total > 1 && (
+              <span style={{
+                color: '#6366f1',
+                fontSize: '10px',
+                fontWeight: '500'
+              }}>
+                {transaction.installments_number}/{transaction.installments_total}
+              </span>
+            )}
+          </Box>
+        )}
+      </TableCell>
+      {!hideInstallmentsColumn && (
+        <TableCell style={{ ...cellStyle, textAlign: 'center' }}>
+          {transaction.installments_total && transaction.installments_total > 1 ? (
+            <span style={{
+              backgroundColor: 'rgba(99, 102, 241, 0.1)',
+              color: '#6366f1',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: '500'
+            }}>
+              {transaction.installments_number}/{transaction.installments_total}
+            </span>
+          ) : (
+            <span style={{ color: theme.palette.text.disabled, fontSize: '12px' }}>—</span>
+          )}
+        </TableCell>
+      )}
+
+      <TableCell style={cellStyle}>
+        <AccountDisplay transaction={transaction} premium={false} compact={isWidget} />
+      </TableCell>
+      {showProcessedDate && (
+        <TableCell style={cellStyle}>
+          <span style={{ color: theme.palette.text.secondary }}>
+            {transaction.processed_date ? dateUtils.formatDate(transaction.processed_date) : '—'}
+          </span>
+        </TableCell>
+      )}
+
+      {!groupByDate && (
+        <TableCell style={{ ...cellStyle, color: theme.palette.text.secondary }}>
+          <Tooltip
+            title={transaction.processed_date ? `Process date: ${dateUtils.formatDate(transaction.processed_date)}` : "No process date available"}
+            arrow
+            placement="top"
+          >
+            <span>{dateUtils.formatDate(transaction.date)}</span>
+          </Tooltip>
+        </TableCell>
+      )}
+
+
+      {!hideActions && (
+        <TableCell align="right" style={cellStyle}>
+          {editingTransaction?.identifier === transaction.identifier ? (
+            <>
+              <IconButton
+                onClick={handleSaveClick}
+                sx={{ color: '#4ADE80' }}
+              >
+                <CheckIcon />
+              </IconButton>
+              <IconButton
+                onClick={handleCancelClick}
+                sx={{ color: '#ef4444' }}
+              >
+                <CloseIcon />
+              </IconButton>
+            </>
+          ) : (
+            <>
+              <IconButton
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRowClick(transaction);
+                  handleEditClick(transaction);
+                }}
+                sx={{ color: '#3b82f6' }}
+              >
+                <EditIcon />
+              </IconButton>
+              <IconButton
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmDeleteTransaction(transaction);
+                }}
+                sx={{ color: '#ef4444' }}
+              >
+                <DeleteIcon />
+              </IconButton>
+            </>
+          )}
+        </TableCell>
+      )}
+    </TableRow>
+  );
+});
+
+TransactionRow.displayName = 'TransactionRow';
+
+interface TransactionMobileCardProps {
+  transaction: Transaction;
+  theme: any;
+  onEdit: () => void;
+  onDelete: () => void;
+  getCardVendor: (accountNumber: string | undefined | null) => string | null;
+  getCardNickname: (accountNumber: string | undefined | null) => string | null | undefined;
+  showDate?: boolean;
+  isEditing?: boolean;
+  editCategory?: string;
+  setEditCategory?: (val: string) => void;
+  availableCategories?: string[];
+  applyToAll?: boolean;
+  setApplyToAll?: (val: boolean) => void;
+  editPrice?: string;
+  setEditPrice?: (val: string) => void;
+  onSave?: () => void;
+  onCancel?: () => void;
+}
+
+// Card content component for MobileSortableTable (without Paper wrapper)
+const TransactionMobileCardContent = ({
+  transaction,
+  theme,
+  onEdit,
+  onDelete,
+  getCardVendor,
+  getCardNickname,
+  showDate,
+  isEditing,
+  editCategory,
+  setEditCategory,
+  availableCategories,
+  applyToAll,
+  setApplyToAll,
+  editPrice,
+  setEditPrice,
+  onSave,
+  onCancel
+}: TransactionMobileCardProps) => {
+  const displayAmount = Math.abs(transaction.price);
+
+  const getCurrencySymbol = (currency?: string) => {
+    if (!currency) return '₪';
+    if (['EUR', '€'].includes(currency)) return '€';
+    if (['USD', '$'].includes(currency)) return '$';
+    if (['GBP', '£'].includes(currency)) return '£';
+    if (['ILS', '₪', 'NIS'].includes(currency)) return '₪';
+    return currency + ' ';
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700, flex: 1, mr: 1 }}>
+          {transaction.name}
+          {showDate && (
+            <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', fontWeight: 500, mt: 0.5 }}>
+              {dateUtils.formatDate(transaction.date)}
+            </Typography>
+          )}
+        </Typography>
+        {isEditing ? (
+          <TextField
+            value={editPrice}
+            onChange={(e) => setEditPrice?.(e.target.value)}
+            size="small"
+            type="number"
+            autoFocus
+            sx={{
+              width: '100px',
+              '& .MuiInputBase-input': {
+                fontWeight: 800,
+                fontSize: '14px',
+                color: transaction.price < 0 ? '#ef4444' : '#10b981',
+                textAlign: 'right',
+                py: 0.5
+              }
+            }}
+          />
+        ) : (
+          <Typography
+            variant="subtitle2"
+            sx={{
+              fontWeight: 800,
+              color: transaction.price < 0 ? '#ef4444' : '#10b981',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {transaction.price < 0 ? '-' : '+'}₪{formatNumber(displayAmount)}
+          </Typography>
+        )}
+      </Box>
+
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+        <Box sx={{ flex: 1 }}>
+          {isEditing ? (
+            <CategoryAutocomplete
+              value={editCategory || ''}
+              onChange={setEditCategory || (() => { })}
+              options={availableCategories || []}
+              applyToAll={applyToAll || false}
+              onApplyToAllChange={setApplyToAll || (() => { })}
+              showApplyToAll={editCategory !== transaction.category}
+            />
+          ) : (
+            <span
+              style={{
+                padding: '2px 8px',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                color: '#3b82f6',
+                fontSize: '11px',
+                fontWeight: 600
+              }}
+            >
+              {transaction.category}
+            </span>
+          )}
+        </Box>
+        {transaction.installments_total && transaction.installments_total > 1 && !isEditing && (
+          <span style={{
+            color: '#6366f1',
+            fontSize: '10px',
+            fontWeight: '600',
+            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+            padding: '2px 6px',
+            borderRadius: '4px'
+          }}>
+            {transaction.installments_number}/{transaction.installments_total}
+          </span>
+        )}
+        {transaction.original_currency && !['ILS', '₪', 'NIS'].includes(transaction.original_currency) && transaction.original_amount && (
+          <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
+            {getCurrencySymbol(transaction.original_currency)}{formatNumber(Math.abs(transaction.original_amount))}
+          </Typography>
+        )}
+      </Box>
+
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CardVendorIcon vendor={getCardVendor(transaction.account_number)} size={18} />
+          <Typography variant="caption" sx={{ color: theme.palette.text.secondary, fontWeight: 500 }}>
+            {getCardNickname(transaction.account_number) || (transaction.account_number ? `•••• ${transaction.account_number.slice(-4)}` : 'Card')}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          {isEditing ? (
+            <>
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onSave?.(); }} sx={{ color: '#10b981' }}>
+                <CheckIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onCancel?.(); }} sx={{ color: '#ef4444' }}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </>
+          ) : (
+            <>
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit(); }} sx={{ color: theme.palette.primary.main }}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onDelete(); }} sx={{ color: theme.palette.error.main }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </>
+          )}
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
+const TransactionMobileCard = ({
+  transaction,
+  theme,
+  onEdit,
+  onDelete,
+  getCardVendor,
+  getCardNickname,
+  showDate,
+  isEditing,
+  editCategory,
+  setEditCategory,
+  availableCategories,
+  applyToAll,
+  setApplyToAll,
+  editPrice,
+  setEditPrice,
+  onSave,
+  onCancel
+}: TransactionMobileCardProps) => {
+  const displayAmount = Math.abs(transaction.price);
+
+  const getCurrencySymbol = (currency?: string) => {
+    if (!currency) return '₪';
+    if (['EUR', '€'].includes(currency)) return '€';
+    if (['USD', '$'].includes(currency)) return '$';
+    if (['GBP', '£'].includes(currency)) return '£';
+    if (['ILS', '₪', 'NIS'].includes(currency)) return '₪';
+    return currency + ' ';
+  };
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 2,
+        borderRadius: '16px',
+        border: `1px solid ${isEditing ? theme.palette.primary.main : theme.palette.divider}`,
+        background: isEditing
+          ? (theme.palette.mode === 'dark' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.05)')
+          : (theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.4)' : 'rgba(255, 255, 255, 0.6)'),
+        backdropFilter: 'blur(10px)',
+        transition: 'all 0.2s ease-in-out'
+      }}
+    >
+      <TransactionMobileCardContent
+        transaction={transaction}
+        theme={theme}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        getCardVendor={getCardVendor}
+        getCardNickname={getCardNickname}
+        showDate={showDate}
+        isEditing={isEditing}
+        editCategory={editCategory}
+        setEditCategory={setEditCategory}
+        availableCategories={availableCategories}
+        applyToAll={applyToAll}
+        setApplyToAll={setApplyToAll}
+        editPrice={editPrice}
+        setEditPrice={setEditPrice}
+        onSave={onSave}
+        onCancel={onCancel}
+      />
+    </Paper>
+  );
+};
+
+export default TransactionsTable;

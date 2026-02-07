@@ -1,0 +1,14 @@
+app/node_modules/*
+app/.next
+.env
+.env.local
+app/scripts/debug/
+node_modules/
+*.tsbuildinfo
+.antigravity/
+
+app/public/debug/
+.agent/
+
+*storybook.log
+storybook-static

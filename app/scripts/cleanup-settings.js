@@ -1,0 +1,56 @@
+import pg from 'pg';
+import fs from 'fs';
+import path from 'path';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+
+const { Pool } = pg;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+const pool = new Pool({
+    user: process.env.NUDLERS_DB_USER,
+    host: process.env.NUDLERS_DB_HOST,
+    database: process.env.NUDLERS_DB_NAME,
+    password: process.env.NUDLERS_DB_PASSWORD,
+    port: process.env.NUDLERS_DB_PORT ? parseInt(process.env.NUDLERS_DB_PORT) : 5432,
+});
+
+async function cleanupSettings() {
+    const settingsToDelete = [
+        'scraper_timeout_standard',
+        'scraper_timeout_rate_limited',
+        'rate_limit_wait_seconds',
+        'show_browser',
+        'whatsapp_twilio_sid',
+        'whatsapp_twilio_auth_token',
+        'whatsapp_twilio_from'
+    ];
+
+    try {
+
+
+        // Check current settings before deletion
+        const checkRes = await pool.query('SELECT key, value FROM app_settings WHERE key = ANY($1)', [settingsToDelete]);
+
+
+
+        if (checkRes.rows.length === 0) {
+
+        } else {
+            // Delete settings
+            const deleteRes = await pool.query('DELETE FROM app_settings WHERE key = ANY($1)', [settingsToDelete]);
+
+        }
+
+
+    } catch (err) {
+        console.error('Error cleaning up settings:', err);
+    } finally {
+        await pool.end();
+    }
+}
+
+cleanupSettings();

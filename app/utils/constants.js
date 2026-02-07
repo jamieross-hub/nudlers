@@ -1,0 +1,75 @@
+import { RESOURCE_CONFIG, isLowResourceMode } from '../config/resource-config.js';
+
+// Credit card vendors
+export const CREDIT_CARD_VENDORS = ['visaCal', 'max', 'isracard', 'amex'];
+
+// Bank vendors (standard format: id, password, num)
+export const STANDARD_BANK_VENDORS = ['hapoalim', 'poalim', 'leumi', 'mizrahi', 'discount', 'yahav', 'union', 'fibi', 'jerusalem', 'onezero', 'pepper'];
+
+// Beinleumi Group banks (special format: username, password only)
+export const BEINLEUMI_GROUP_VENDORS = ['otsarHahayal', 'otsar_hahayal', 'beinleumi', 'massad', 'pagi'];
+
+// All bank vendors
+export const BANK_VENDORS = [...STANDARD_BANK_VENDORS, ...BEINLEUMI_GROUP_VENDORS];
+
+// All vendors
+export const ALL_VENDORS = [...CREDIT_CARD_VENDORS, ...BANK_VENDORS];
+
+// Browser / Anti-detection
+export const CHROME_VERSION = '132.0.6834.83';
+export const DEFAULT_USER_AGENT = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VERSION} Safari/537.36`;
+
+// Browser Flags - from centralized resource config
+export const SCRAPER_DOCKER_FLAGS = [...RESOURCE_CONFIG.chromeFlags.base];
+export const SCRAPER_LOW_RESOURCE_FLAGS = [...RESOURCE_CONFIG.chromeFlags.lowResource];
+
+// Timeout Settings - from centralized resource config
+export const DEFAULT_SCRAPER_TIMEOUT = RESOURCE_CONFIG.scraper.timeout;
+export const DEFAULT_SCRAPE_RETRIES = RESOURCE_CONFIG.scraper.retries;
+export const RATE_LIMIT_DELAY_MIN = 1000;
+export const RATE_LIMIT_DELAY_MAX = 4000;
+export const RATE_LIMIT_SLOW_DELAY_MIN = 5000;
+export const RATE_LIMIT_SLOW_DELAY_MAX = 10000;
+export const DEFAULT_PROTOCOL_TIMEOUT = RESOURCE_CONFIG.scraper.protocolTimeout;
+
+// Scraper Phase 3 (Selective API Calls) - from centralized resource config
+export const SCRAPER_PHASE3_MAX_CALLS = RESOURCE_CONFIG.scraper.phase3MaxCalls;
+export const SCRAPER_PHASE3_DELAY = RESOURCE_CONFIG.scraper.phase3DelayMs;
+export const SCRAPER_PHASE3_BATCH_SIZE = RESOURCE_CONFIG.scraper.phase3BatchSize;
+
+// Cache sizes - from centralized resource config
+export const CATEGORY_CACHE_LIMIT = RESOURCE_CONFIG.cache.categoryCacheLimit;
+export const HISTORY_CACHE_LIMIT = RESOURCE_CONFIG.cache.historyCacheLimit;
+
+// Screenshot retention - from centralized resource config
+export const SCREENSHOT_RETENTION_DAYS = RESOURCE_CONFIG.cleanup.screenshotRetentionDays;
+
+// Re-export resource config helpers for convenience
+export { RESOURCE_CONFIG, isLowResourceMode };
+
+// App Settings Keys
+export const APP_SETTINGS_KEYS = {
+    FETCH_CATEGORIES: 'fetch_categories_from_scrapers',
+    ISRACARD_SCRAPE_CATEGORIES: 'isracard_scrape_categories',
+    UPDATE_CATEGORY_ON_RESCRAPE: 'update_category_on_rescrape',
+    LOG_HTTP_REQUESTS: 'scraper_log_http_requests',
+    SCRAPER_TIMEOUT: 'scraper_timeout',
+    SCRAPE_RETRIES: 'scrape_retries',
+    BILLING_CYCLE_START_DAY: 'billing_cycle_start_day',
+    SYNC_ENABLED: 'sync_enabled',
+    SYNC_DAYS_BACK: 'sync_days_back',
+    DEFAULT_CURRENCY: 'default_currency',
+    DATE_FORMAT: 'date_format',
+    WHATSAPP_ENABLED: 'whatsapp_enabled',
+    WHATSAPP_HOUR: 'whatsapp_hour',
+    WHATSAPP_TO: 'whatsapp_to',
+    WHATSAPP_LAST_SENT_DATE: 'whatsapp_last_sent_date',
+    WHATSAPP_SUMMARY_MODE: 'whatsapp_summary_mode',
+    GEMINI_MODEL: 'gemini_model',
+    SYNC_LAST_RUN_AT: 'sync_last_run_at',
+    SYNC_HOUR: 'sync_hour'
+};
+
+
+// SQL Queries for Settings
+export const FETCH_SETTING_SQL = "SELECT value FROM app_settings WHERE key = $1";
