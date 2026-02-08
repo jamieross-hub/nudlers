@@ -8,10 +8,6 @@ import {
   Box,
   Typography,
   Chip,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
   Checkbox,
   TextField,
   IconButton,
@@ -51,7 +47,6 @@ import Paper from '@mui/material/Paper';
 import LinearProgress from '@mui/material/LinearProgress';
 import InputAdornment from '@mui/material/InputAdornment';
 import Badge from '@mui/material/Badge';
-import { useCategories } from '../utils/useCategories';
 import { logger } from '../../../utils/client-logger';
 
 interface Category {
@@ -613,18 +608,6 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const openRenameDialog = (categoryName: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    setRenamingCategory(categoryName);
-    setRenameNewName(categoryName);
-  };
-
-  const openDeleteDialog = (categoryName: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    setDeletingCategory(categoryName);
-    setDeleteOptions({ deleteRules: true, deleteBudget: true });
   };
 
   const handleDeleteCategory = async () => {
