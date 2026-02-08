@@ -1098,7 +1098,7 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
                         maxHeight: '400px',
                         overflow: 'auto',
                         display: 'grid',
-                        gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(3, 1fr)' },
+                        gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
                         gap: 1.5,
                         pr: 1,
                         '&::-webkit-scrollbar': { width: '6px' },
@@ -1114,7 +1114,7 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
                           key={category.name}
                           onClick={() => handleCategoryToggle(category.name)}
                           sx={{
-                            borderRadius: '12px',
+                            borderRadius: '10px',
                             cursor: 'pointer',
                             border: selectedCategories.includes(category.name)
                               ? `2px solid ${categoryColors[category.name] || '#3b82f6'}`
@@ -1124,61 +1124,46 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
                               : theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#fff',
                             transition: 'all 0.2s ease',
                             '&:hover': {
-                              transform: 'translateY(-2px)',
-                              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                              transform: 'translateY(-1px)',
+                              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                               borderColor: categoryColors[category.name] || '#3b82f6'
                             }
                           }}
                         >
-                          <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
-                              <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                                <Box
-                                  sx={{
-                                    width: 10,
-                                    height: 10,
-                                    borderRadius: '50%',
-                                    background: categoryColors[category.name] || '#3b82f6',
-                                    flexShrink: 0
-                                  }}
-                                />
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    fontWeight: 600,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    fontSize: '0.8rem'
-                                  }}
-                                >
-                                  {category.name}
-                                </Typography>
+                          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Box
+                                sx={{
+                                  width: 20,
+                                  height: 20,
+                                  borderRadius: '4px',
+                                  border: selectedCategories.includes(category.name)
+                                    ? 'none'
+                                    : `2px solid ${theme.palette.divider}`,
+                                  background: selectedCategories.includes(category.name)
+                                    ? categoryColors[category.name] || '#3b82f6'
+                                    : 'transparent',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0,
+                                  transition: 'all 0.2s ease'
+                                }}
+                              >
+                                {selectedCategories.includes(category.name) && (
+                                  <CheckIcon sx={{ fontSize: 14, color: '#fff' }} />
+                                )}
                               </Box>
-                              <Box sx={{ display: 'flex', gap: 0.5 }} onClick={(e) => e.stopPropagation()}>
-                                <IconButton
-                                  size="small"
-                                  onClick={(e) => openRenameDialog(category.name, e)}
-                                  sx={{
-                                    color: categoryColors[category.name] || '#3b82f6',
-                                    '&:hover': { backgroundColor: `${categoryColors[category.name] || '#3b82f6'}20` }
-                                  }}
-                                  title="Rename"
-                                >
-                                  <EditIcon sx={{ fontSize: 16 }} />
-                                </IconButton>
-                                <IconButton
-                                  size="small"
-                                  onClick={(e) => openDeleteDialog(category.name, e)}
-                                  sx={{
-                                    color: '#ef4444',
-                                    '&:hover': { backgroundColor: 'rgba(239, 68, 68, 0.1)' }
-                                  }}
-                                  title="Delete"
-                                >
-                                  <DeleteIcon sx={{ fontSize: 16 }} />
-                                </IconButton>
-                              </Box>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 500,
+                                  lineHeight: 1.3,
+                                  wordBreak: 'break-word'
+                                }}
+                              >
+                                {category.name}
+                              </Typography>
                             </Box>
                           </CardContent>
                         </Card>
