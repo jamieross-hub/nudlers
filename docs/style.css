@@ -29,7 +29,7 @@
 
 html {
     scroll-behavior: smooth;
-    scroll-padding-top: var(--nav-height);
+    scroll-padding-top: 70px;
 }
 
 body {
@@ -451,7 +451,7 @@ ul li::before {
 /* ── Sections ────────────────────────────────────────────── */
 
 .section {
-    padding: 100px 0;
+    padding: 20px 0 100px;
 }
 
 .section-alt {
@@ -1028,7 +1028,7 @@ ul li::before {
     }
 
     .section {
-        padding: 64px 0;
+        padding: 90px 0 64px;
     }
 
     .resource-modes {
