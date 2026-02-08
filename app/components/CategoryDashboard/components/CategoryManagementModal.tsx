@@ -38,6 +38,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import SearchIcon from '@mui/icons-material/Search';
 import { useCategoryColors } from '../utils/categoryUtils';
 import ModalHeader from '../../ModalHeader';
 import Table from '@mui/material/Table';
@@ -109,6 +110,7 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [categorySearchFilter, setCategorySearchFilter] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -1005,9 +1007,38 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
 
             {/* All Categories - Full Width */}
             <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
-                All Categories ({categories.length})
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, gap: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  All Categories ({categories.filter(c => c.name.toLowerCase().includes(categorySearchFilter.toLowerCase())).length})
+                </Typography>
+                <TextField
+                  size="small"
+                  placeholder="Search categories..."
+                  value={categorySearchFilter}
+                  onChange={(e) => setCategorySearchFilter(e.target.value)}
+                  sx={{
+                    width: '250px',
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '8px',
+                      background: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : '#fff'
+                    }
+                  }}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ color: theme.palette.text.secondary, fontSize: 20 }} />
+                      </InputAdornment>
+                    ),
+                    endAdornment: categorySearchFilter && (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => setCategorySearchFilter('')}>
+                          <CloseIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }}
+                />
+              </Box>
 
               {isLoading ? (
                 <Box display="flex" justifyContent="center" padding="32px">
@@ -1034,63 +1065,65 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
                     }
                   }}
                 >
-                  {categories.map((category) => (
-                    <Card
-                      key={category.name}
-                      onClick={() => handleCategoryToggle(category.name)}
-                      sx={{
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        border: selectedCategories.includes(category.name)
-                          ? `2px solid ${categoryColors[category.name] || '#3b82f6'}`
-                          : `1px solid ${theme.palette.divider}`,
-                        background: selectedCategories.includes(category.name)
-                          ? `linear-gradient(135deg, ${categoryColors[category.name] || '#3b82f6'}15 0%, ${categoryColors[category.name] || '#3b82f6'}05 100%)`
-                          : theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#fff',
-                        transition: 'all 0.15s ease',
-                        '&:hover': {
-                          boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)',
-                          borderColor: categoryColors[category.name] || '#3b82f6'
-                        }
-                      }}
-                    >
-                      <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                          <Box
-                            sx={{
-                              width: 16,
-                              height: 16,
-                              borderRadius: '3px',
-                              border: selectedCategories.includes(category.name)
-                                ? 'none'
-                                : `1.5px solid ${theme.palette.divider}`,
-                              background: selectedCategories.includes(category.name)
-                                ? categoryColors[category.name] || '#3b82f6'
-                                : 'transparent',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0
-                            }}
-                          >
-                            {selectedCategories.includes(category.name) && (
-                              <CheckIcon sx={{ fontSize: 12, color: '#fff' }} />
-                            )}
+                  {categories
+                    .filter(c => c.name.toLowerCase().includes(categorySearchFilter.toLowerCase()))
+                    .map((category) => (
+                      <Card
+                        key={category.name}
+                        onClick={() => handleCategoryToggle(category.name)}
+                        sx={{
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          border: selectedCategories.includes(category.name)
+                            ? `2px solid ${categoryColors[category.name] || '#3b82f6'}`
+                            : `1px solid ${theme.palette.divider}`,
+                          background: selectedCategories.includes(category.name)
+                            ? `linear-gradient(135deg, ${categoryColors[category.name] || '#3b82f6'}15 0%, ${categoryColors[category.name] || '#3b82f6'}05 100%)`
+                            : theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#fff',
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)',
+                            borderColor: categoryColors[category.name] || '#3b82f6'
+                          }
+                        }}
+                      >
+                        <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                            <Box
+                              sx={{
+                                width: 16,
+                                height: 16,
+                                borderRadius: '3px',
+                                border: selectedCategories.includes(category.name)
+                                  ? 'none'
+                                  : `1.5px solid ${theme.palette.divider}`,
+                                background: selectedCategories.includes(category.name)
+                                  ? categoryColors[category.name] || '#3b82f6'
+                                  : 'transparent',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                              }}
+                            >
+                              {selectedCategories.includes(category.name) && (
+                                <CheckIcon sx={{ fontSize: 12, color: '#fff' }} />
+                              )}
+                            </Box>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontWeight: 500,
+                                fontSize: '0.8rem',
+                                lineHeight: 1.2
+                              }}
+                            >
+                              {category.name}
+                            </Typography>
                           </Box>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              fontWeight: 500,
-                              fontSize: '0.8rem',
-                              lineHeight: 1.2
-                            }}
-                          >
-                            {category.name}
-                          </Typography>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    ))}
                 </Box>
               )}
             </Box>
