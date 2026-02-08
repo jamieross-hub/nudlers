@@ -316,7 +316,7 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
         })
       );
 
-      setCategories(categoriesWithCounts.sort((a, b) => b.count - a.count));
+      setCategories(categoriesWithCounts.sort((a, b) => a.name.localeCompare(b.name, 'he')));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       logger.error('Error fetching categories', undefined, { errorMessage });
@@ -960,14 +960,9 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
                             >
                               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <Box sx={{ flex: 1 }}>
-                                    <Typography variant="body1" sx={{ color: '#fff', fontWeight: 600, mb: 0.5 }}>
-                                      {catName}
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-                                      {category?.count || 0} transactions
-                                    </Typography>
-                                  </Box>
+                                  <Typography variant="body1" sx={{ color: '#fff', fontWeight: 600, flex: 1 }}>
+                                    {catName}
+                                  </Typography>
                                   <IconButton
                                     size="small"
                                     onClick={() => handleCategoryToggle(catName)}
@@ -1026,9 +1021,14 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
                     <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>
                       Create Merged Category
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                       All transactions from selected categories will be moved to this new category
                     </Typography>
+                    <Alert severity="info" sx={{ mb: 3, borderRadius: '12px' }}>
+                      <Typography variant="body2">
+                        <strong>Auto-mapping:</strong> When you merge, automatic mappings are created so future imports with the old category names will be mapped to the new category.
+                      </Typography>
+                    </Alert>
 
                     <TextField
                       fullWidth
@@ -1098,7 +1098,7 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
                         maxHeight: '400px',
                         overflow: 'auto',
                         display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+                        gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(3, 1fr)' },
                         gap: 1.5,
                         pr: 1,
                         '&::-webkit-scrollbar': { width: '6px' },
@@ -1130,33 +1130,29 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
                             }
                           }}
                         >
-                          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                              <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                  <Box
-                                    sx={{
-                                      width: 12,
-                                      height: 12,
-                                      borderRadius: '50%',
-                                      background: categoryColors[category.name] || '#3b82f6',
-                                      flexShrink: 0
-                                    }}
-                                  />
-                                  <Typography
-                                    variant="body2"
-                                    sx={{
-                                      fontWeight: 600,
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap'
-                                    }}
-                                  >
-                                    {category.name}
-                                  </Typography>
-                                </Box>
-                                <Typography variant="caption" color="text.secondary">
-                                  {category.count} txns
+                          <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
+                              <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                <Box
+                                  sx={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: '50%',
+                                    background: categoryColors[category.name] || '#3b82f6',
+                                    flexShrink: 0
+                                  }}
+                                />
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontWeight: 600,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    fontSize: '0.8rem'
+                                  }}
+                                >
+                                  {category.name}
                                 </Typography>
                               </Box>
                               <Box sx={{ display: 'flex', gap: 0.5 }} onClick={(e) => e.stopPropagation()}>
