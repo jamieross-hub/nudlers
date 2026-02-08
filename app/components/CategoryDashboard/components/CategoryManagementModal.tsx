@@ -896,133 +896,302 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
 
         {currentTab === 0 && (
           <>
-            <Box style={{ marginBottom: '24px' }}>
-              <Typography variant="subtitle1" style={{ marginBottom: '12px', fontWeight: 600 }}>
-                Merge Categories
-              </Typography>
-              <Typography variant="body2" color={theme.palette.text.secondary} style={{ marginBottom: '16px' }}>
-                Select multiple categories to merge them into a new consolidated category.
-                All transactions from the selected categories will be moved to the new category.
-              </Typography>
-
-              <TextField
-                fullWidth
-                label="New Category Name"
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                placeholder="Enter name for merged category..."
-                style={{ marginBottom: '16px' }}
-                disabled={isLoading}
-              />
-
-              <Button
-                variant="contained"
-                startIcon={<MergeIcon />}
-                onClick={handleMerge}
-                disabled={selectedCategories.length < 2 || !newCategoryName.trim() || isLoading}
-                style={{
-                  backgroundColor: '#3b82f6',
-                  color: 'white',
-                  borderRadius: '12px',
-                  padding: '10px 24px',
-                  textTransform: 'none',
-                  fontWeight: 600
-                }}
-              >
-                {isLoading ? <CircularProgress size={20} color="inherit" /> : 'Merge Selected Categories'}
-              </Button>
-            </Box>
-
-            <Divider style={{ margin: '24px 0' }} />
-
-            <Box>
-              <Typography variant="subtitle1" style={{ marginBottom: '16px', fontWeight: 600 }}>
-                Available Categories ({categories.length})
-              </Typography>
-
-              {isLoading ? (
-                <Box display="flex" justifyContent="center" padding="32px">
-                  <CircularProgress />
-                </Box>
-              ) : (
+            <Grid container spacing={3}>
+              {/* Left Column - Selected Categories */}
+              <Grid item xs={12} md={5}>
                 <Box
-                  style={{
-                    maxHeight: '400px',
-                    overflow: 'auto',
+                  sx={{
+                    background: theme.palette.mode === 'dark'
+                      ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%)'
+                      : 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)',
+                    borderRadius: '20px',
+                    padding: '24px',
+                    border: `2px dashed ${selectedCategories.length >= 2 ? '#3b82f6' : theme.palette.divider}`,
+                    minHeight: '400px',
                     display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: '8px'
+                    flexDirection: 'column',
+                    transition: 'all 0.3s ease'
                   }}
                 >
-                  {categories.map((category, index) => (
-                    <Box key={category.name} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                      <Chip
-                        label={category.name}
-                        onClick={() => handleCategoryToggle(category.name)}
-                        onDelete={selectedCategories.includes(category.name) ? () => handleCategoryToggle(category.name) : undefined}
-                        deleteIcon={<Checkbox
-                          checked={selectedCategories.includes(category.name)}
-                          style={{ color: 'white' }}
-                        />}
-                        style={{
-                          backgroundColor: selectedCategories.includes(category.name)
-                            ? categoryColors[category.name] || '#3b82f6'
-                            : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : '#f8f9fa'),
-                          color: selectedCategories.includes(category.name)
-                            ? 'white'
-                            : theme.palette.text.primary,
-                          border: selectedCategories.includes(category.name)
-                            ? 'none'
-                            : `1px solid ${selectedCategories.includes(category.name) ? (categoryColors[category.name] || '#3b82f6') : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : (categoryColors[category.name] || '#3b82f6'))}`,
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease-in-out',
-                          fontWeight: selectedCategories.includes(category.name) ? '600' : '500',
-                          fontSize: '14px',
-                          height: '32px'
-                        }}
-                        sx={{
-                          '&:hover': {
-                            backgroundColor: selectedCategories.includes(category.name)
-                              ? categoryColors[category.name] || '#3b82f6'
-                              : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(59, 130, 246, 0.1)'),
-                            transform: 'translateY(-1px)',
-                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-                          }
-                        }}
-                      />
-                      <IconButton
-                        size="medium"
-                        onClick={(e) => openRenameDialog(category.name, e)}
-                        sx={{
-                          padding: { xs: '8px', sm: '4px' },
-                          color: categoryColors[category.name] || '#3b82f6',
-                          '& .MuiSvgIcon-root': {
-                            fontSize: { xs: '20px', sm: '16px' }
-                          }
-                        }}
-                        title={`Rename "${category.name}"`}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        size="medium"
-                        onClick={(e) => openDeleteDialog(category.name, e)}
-                        sx={{
-                          padding: { xs: '8px', sm: '4px' },
-                          color: '#ef4444',
-                          '& .MuiSvgIcon-root': {
-                            fontSize: { xs: '20px', sm: '16px' }
-                          }
-                        }}
-                        title={`Delete "${category.name}"`}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                    <MergeIcon sx={{ color: '#3b82f6', fontSize: 24 }} />
+                    <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                      Selected to Merge
+                    </Typography>
+                  </Box>
+
+                  {selectedCategories.length === 0 ? (
+                    <Box
+                      sx={{
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        textAlign: 'center',
+                        color: theme.palette.text.secondary,
+                        gap: 2
+                      }}
+                    >
+                      <MergeIcon sx={{ fontSize: 64, opacity: 0.2 }} />
+                      <Typography variant="body2">
+                        Select at least 2 categories from the list below to merge them
+                      </Typography>
                     </Box>
-                  ))}
+                  ) : (
+                    <>
+                      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
+                        {selectedCategories.map((catName, idx) => {
+                          const category = categories.find(c => c.name === catName);
+                          return (
+                            <Card
+                              key={catName}
+                              sx={{
+                                background: categoryColors[catName] || '#3b82f6',
+                                borderRadius: '12px',
+                                overflow: 'hidden',
+                                position: 'relative',
+                                animation: 'slideIn 0.3s ease',
+                                '@keyframes slideIn': {
+                                  from: { opacity: 0, transform: 'translateX(-20px)' },
+                                  to: { opacity: 1, transform: 'translateX(0)' }
+                                }
+                              }}
+                            >
+                              <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography variant="body1" sx={{ color: '#fff', fontWeight: 600, mb: 0.5 }}>
+                                      {catName}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                                      {category?.count || 0} transactions
+                                    </Typography>
+                                  </Box>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleCategoryToggle(catName)}
+                                    sx={{
+                                      color: '#fff',
+                                      backgroundColor: 'rgba(255,255,255,0.2)',
+                                      '&:hover': { backgroundColor: 'rgba(255,255,255,0.3)' }
+                                    }}
+                                  >
+                                    <CloseIcon fontSize="small" />
+                                  </IconButton>
+                                </Box>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </Box>
+
+                      {selectedCategories.length >= 2 && (
+                        <Box
+                          sx={{
+                            p: 2,
+                            borderRadius: '12px',
+                            background: theme.palette.mode === 'dark'
+                              ? 'rgba(34, 197, 94, 0.1)'
+                              : 'rgba(34, 197, 94, 0.05)',
+                            border: '1px solid rgba(34, 197, 94, 0.3)'
+                          }}
+                        >
+                          <Typography variant="caption" sx={{ color: '#22c55e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <CheckIcon fontSize="small" />
+                            Ready to merge {selectedCategories.length} categories
+                          </Typography>
+                        </Box>
+                      )}
+                    </>
+                  )}
                 </Box>
-              )}
-            </Box>
+              </Grid>
+
+              {/* Right Column - Merge Form & Categories List */}
+              <Grid item xs={12} md={7}>
+                {/* Merge Form */}
+                <Card
+                  sx={{
+                    borderRadius: '20px',
+                    mb: 3,
+                    background: theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.05)'
+                      : '#fff',
+                    border: `1px solid ${theme.palette.divider}`,
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)'
+                  }}
+                >
+                  <CardContent sx={{ p: 3 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>
+                      Create Merged Category
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                      All transactions from selected categories will be moved to this new category
+                    </Typography>
+
+                    <TextField
+                      fullWidth
+                      label="New Category Name"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      placeholder="e.g., Food & Dining"
+                      disabled={isLoading || selectedCategories.length < 2}
+                      sx={{
+                        mb: 2,
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '12px',
+                          '&.Mui-focused fieldset': {
+                            borderColor: '#3b82f6',
+                            borderWidth: '2px'
+                          }
+                        }
+                      }}
+                    />
+
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      size="large"
+                      startIcon={isLoading ? null : <MergeIcon />}
+                      onClick={handleMerge}
+                      disabled={selectedCategories.length < 2 || !newCategoryName.trim() || isLoading}
+                      sx={{
+                        background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                        color: 'white',
+                        borderRadius: '12px',
+                        padding: '12px 24px',
+                        textTransform: 'none',
+                        fontWeight: 700,
+                        fontSize: '16px',
+                        boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+                        '&:hover': {
+                          background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                          boxShadow: '0 6px 16px rgba(59, 130, 246, 0.4)',
+                          transform: 'translateY(-2px)'
+                        },
+                        '&:disabled': {
+                          background: theme.palette.action.disabledBackground,
+                          boxShadow: 'none'
+                        },
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      {isLoading ? <CircularProgress size={24} color="inherit" /> : 'Merge Categories'}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Categories List */}
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>
+                    All Categories ({categories.length})
+                  </Typography>
+
+                  {isLoading ? (
+                    <Box display="flex" justifyContent="center" padding="32px">
+                      <CircularProgress />
+                    </Box>
+                  ) : (
+                    <Box
+                      sx={{
+                        maxHeight: '400px',
+                        overflow: 'auto',
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+                        gap: 1.5,
+                        pr: 1,
+                        '&::-webkit-scrollbar': { width: '6px' },
+                        '&::-webkit-scrollbar-track': { background: 'transparent' },
+                        '&::-webkit-scrollbar-thumb': {
+                          background: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                          borderRadius: '10px'
+                        }
+                      }}
+                    >
+                      {categories.map((category) => (
+                        <Card
+                          key={category.name}
+                          onClick={() => handleCategoryToggle(category.name)}
+                          sx={{
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            border: selectedCategories.includes(category.name)
+                              ? `2px solid ${categoryColors[category.name] || '#3b82f6'}`
+                              : `1px solid ${theme.palette.divider}`,
+                            background: selectedCategories.includes(category.name)
+                              ? `linear-gradient(135deg, ${categoryColors[category.name] || '#3b82f6'}15 0%, ${categoryColors[category.name] || '#3b82f6'}05 100%)`
+                              : theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#fff',
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                              borderColor: categoryColors[category.name] || '#3b82f6'
+                            }
+                          }}
+                        >
+                          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                  <Box
+                                    sx={{
+                                      width: 12,
+                                      height: 12,
+                                      borderRadius: '50%',
+                                      background: categoryColors[category.name] || '#3b82f6',
+                                      flexShrink: 0
+                                    }}
+                                  />
+                                  <Typography
+                                    variant="body2"
+                                    sx={{
+                                      fontWeight: 600,
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    {category.name}
+                                  </Typography>
+                                </Box>
+                                <Typography variant="caption" color="text.secondary">
+                                  {category.count} txns
+                                </Typography>
+                              </Box>
+                              <Box sx={{ display: 'flex', gap: 0.5 }} onClick={(e) => e.stopPropagation()}>
+                                <IconButton
+                                  size="small"
+                                  onClick={(e) => openRenameDialog(category.name, e)}
+                                  sx={{
+                                    color: categoryColors[category.name] || '#3b82f6',
+                                    '&:hover': { backgroundColor: `${categoryColors[category.name] || '#3b82f6'}20` }
+                                  }}
+                                  title="Rename"
+                                >
+                                  <EditIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  onClick={(e) => openDeleteDialog(category.name, e)}
+                                  sx={{
+                                    color: '#ef4444',
+                                    '&:hover': { backgroundColor: 'rgba(239, 68, 68, 0.1)' }
+                                  }}
+                                  title="Delete"
+                                >
+                                  <DeleteIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                              </Box>
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </Box>
+                  )}
+                </Box>
+              </Grid>
+            </Grid>
           </>
         )}
 
