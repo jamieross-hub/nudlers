@@ -240,6 +240,7 @@ const getVendorIcon = (vendor: string) => {
 import { useTheme } from '@mui/material/styles';
 import { useNotification } from './NotificationContext';
 import { useStatus } from '../context/StatusContext';
+import NDatePicker from './NDatePicker';
 
 const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width, onWidthChange, onSyncSuccess }) => {
   const theme = useTheme();
@@ -323,6 +324,7 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
   const [syncOptionsStartDate, setSyncOptionsStartDate] = useState<string>('');
   const [syncOptionsShowBrowser, setSyncOptionsShowBrowser] = useState(false);
   const [isLoadingStartDate, setIsLoadingStartDate] = useState(false);
+  const [syncOptionsDateError, setSyncOptionsDateError] = useState<string | null>(null);
 
   // Resizing state
   const [isResizing, setIsResizing] = useState(false);
@@ -452,20 +454,40 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
     return null;
   };
 
+  const validateSyncDate = (dateStr: string): string | null => {
+    if (!dateStr) return 'Date is required';
+    const date = new Date(dateStr + 'T00:00:00');
+    if (isNaN(date.getTime())) return 'Invalid date';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (date > today) return 'Date cannot be in the future';
+    return null;
+  };
+
+  const handleSyncDateChange = (value: string) => {
+    setSyncOptionsStartDate(value);
+    setSyncOptionsDateError(validateSyncDate(value));
+  };
+
   const prepareSyncOptionsForAccount = async (accountId: number, vendor: string, nickname: string) => {
     setSyncOptionsShowBrowser(vendor === 'hapoalim');
     setIsLoadingStartDate(true);
+    setSyncOptionsDateError(null);
     setPendingSyncRequest({ accountId, vendor, nickname });
     try {
       const lastDate = await fetchLastTransactionDate(vendor);
       const startDate = lastDate ? new Date(lastDate) : new Date();
       const daysBack = status?.settings?.daysBack || 30;
       startDate.setDate(startDate.getDate() - daysBack);
-      setSyncOptionsStartDate(startDate.toISOString().split('T')[0]);
+      const computed = startDate.toISOString().split('T')[0];
+      setSyncOptionsStartDate(computed);
+      setSyncOptionsDateError(validateSyncDate(computed));
     } catch {
       const fallback = new Date();
       fallback.setDate(fallback.getDate() - 30);
-      setSyncOptionsStartDate(fallback.toISOString().split('T')[0]);
+      const computed = fallback.toISOString().split('T')[0];
+      setSyncOptionsStartDate(computed);
+      setSyncOptionsDateError(validateSyncDate(computed));
     } finally {
       setIsLoadingStartDate(false);
     }
@@ -1106,33 +1128,14 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
             </Box>
 
             <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" sx={{ color: theme.palette.text.secondary, fontWeight: 600, display: 'block', mb: 0.5 }}>
-                Start Date
-              </Typography>
-              {isLoadingStartDate ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CircularProgress size={16} />
-                  <Typography variant="caption" sx={{ color: theme.palette.text.disabled }}>Calculating...</Typography>
-                </Box>
-              ) : (
-                <input
-                  type="date"
-                  value={syncOptionsStartDate}
-                  max={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => setSyncOptionsStartDate(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    border: `1px solid ${theme.palette.divider}`,
-                    background: theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.3)' : '#fff',
-                    color: theme.palette.text.primary,
-                    fontSize: '0.875rem',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              )}
+              <NDatePicker
+                value={syncOptionsStartDate}
+                onChange={handleSyncDateChange}
+                label="Start Date"
+                error={syncOptionsDateError}
+                loading={isLoadingStartDate}
+                maxDate={new Date()}
+              />
             </Box>
 
             <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1157,7 +1160,7 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
               variant="contained"
               fullWidth
               onClick={handleStartSyncWithOptions}
-              disabled={isLoadingStartDate || !syncOptionsStartDate}
+              disabled={isLoadingStartDate || !syncOptionsStartDate || !!syncOptionsDateError}
               startIcon={<PlayArrowIcon />}
               sx={{
                 textTransform: 'none',
