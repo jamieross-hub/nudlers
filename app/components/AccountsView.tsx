@@ -27,6 +27,7 @@ import SyncHistoryModal from './SyncHistoryModal';
 import { useNotification } from './NotificationContext';
 import { useView } from './Layout';
 import { CREDIT_CARD_VENDORS, BANK_VENDORS, BEINLEUMI_GROUP_VENDORS, STANDARD_BANK_VENDORS } from '../utils/constants';
+import { logger } from '../utils/client-logger';
 import PageHeader from './PageHeader';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 
@@ -105,7 +106,7 @@ const AccountsView: React.FC = () => {
                 setCardOwnership(await response.json());
             }
         } catch (err) {
-            console.error('Failed to fetch card ownership', err);
+            logger.error('Failed to fetch card ownership', err);
         }
     }, []);
 
@@ -195,7 +196,7 @@ const AccountsView: React.FC = () => {
             co.id === cardId ? { ...co, is_hidden: isHidden } : co
         ));
         try {
-            const response = await fetch(`/api/accounts/${cardId}`, {
+            const response = await fetch(`/api/cards/ownerships/${cardId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ is_hidden: isHidden }),

@@ -180,12 +180,13 @@ jobs:
 
       - name: Verify architecture
         run: |
-          EXPECTED_ARCH="${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}"
-          ACTUAL_ARCH=$(docker inspect \
+          EXPECTED_ARCH_UNAME="${{ matrix.platform == 'linux/arm64' && 'aarch64' || 'x86_64' }}"
+          echo "Expected uname -m: $EXPECTED_ARCH_UNAME"
+          ACTUAL_ARCH_UNAME=$(docker run --rm --platform ${{ matrix.platform }} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch_name.outputs.branch }} \
-            --format '{{.Architecture}}')
-          echo "Expected: $EXPECTED_ARCH, Actual: $ACTUAL_ARCH"
-          [ "$ACTUAL_ARCH" = "$EXPECTED_ARCH" ] || { echo "Architecture mismatch!"; exit 1; }
+            uname -m)
+          echo "Actual uname -m: $ACTUAL_ARCH_UNAME"
+          [ "$ACTUAL_ARCH_UNAME" = "$EXPECTED_ARCH_UNAME" ] || { echo "Architecture mismatch!"; exit 1; }
 
       - name: Start container
         run: |

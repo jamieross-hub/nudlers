@@ -24,7 +24,7 @@ const ChatView = dynamic(() => import("./ChatView"), { ssr: false });
 const DesignSystemShowcase = dynamic(() => import("./DesignSystemShowcase"), { ssr: false });
 const BreakdownView = dynamic(() => import("./BreakdownView"), { ssr: false });
 const ProjectionView = dynamic(() => import("./ProjectionView"), { ssr: false });
-import AccountsView from "./AccountsView";
+const AccountsView = dynamic(() => import("./AccountsView"), { ssr: false });
 
 type ViewType = 'dashboard' | 'summary' | 'budget' | 'chat' | 'audit' | 'recurring' | 'design' | 'breakdown' | 'projection' | 'accounts';
 

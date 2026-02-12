@@ -39,7 +39,7 @@ interface PageHeaderProps {
     onSearchSubmit?: (e: React.FormEvent) => void;
     isSearching?: boolean;
 
-    // Extra actions/controls
+    // Extra actions/controls (actions takes precedence over extraControls)
     extraControls?: React.ReactNode;
     actions?: React.ReactNode;
 
