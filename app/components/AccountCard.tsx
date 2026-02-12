@@ -179,7 +179,7 @@ const AccountCard: React.FC<AccountCardProps> = ({
                         alignItems: 'center',
                         justifyContent: 'center'
                     }}>
-                        <CardVendorIcon vendor={account.vendor} size={24} color="#fff" />
+                        <CardVendorIcon vendor={account.vendor} size={24} />
                     </Box>
                     <Box>
                         <Typography variant="h6" sx={{ color: 'white', fontWeight: 700, lineHeight: 1.2 }}>
