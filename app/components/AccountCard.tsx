@@ -51,6 +51,7 @@ interface AccountCardProps {
     onDelete: (id: number) => void;
     onToggleActive: (account: Account) => void;
     onToggleCardVisibility?: (cardId: number, isHidden: boolean) => void;
+    onUpdateCardLink?: (cardId: number, bankAccountId: number | null) => void;
 }
 
 const PremiumCard = styled(Box, {
@@ -115,7 +116,8 @@ const AccountCard: React.FC<AccountCardProps> = ({
     onTruncate,
     onDelete,
     onToggleActive,
-    onToggleCardVisibility
+    onToggleCardVisibility,
+    onUpdateCardLink
 }) => {
     const isBank = BANK_VENDORS.includes(account.vendor);
 
