@@ -339,7 +339,6 @@ const AccountsView: React.FC = () => {
                                     <Grid item xs={12} sm={6} lg={4} key={account.id}>
                                         <AccountCard
                                             account={account}
-                                            bankAccounts={bankAccounts}
                                             onEdit={openEditModal}
                                             onSync={handleSync}
                                             onTruncate={(a) => setTruncateConfirm({ isOpen: true, account: a })}
@@ -371,7 +370,6 @@ const AccountsView: React.FC = () => {
                                         <AccountCard
                                             account={account}
                                             ownedCards={cardOwnership.filter(co => co.credential_id === account.id)}
-                                            bankAccounts={bankAccounts}
                                             onEdit={openEditModal}
                                             onSync={handleSync}
                                             onTruncate={(a) => setTruncateConfirm({ isOpen: true, account: a })}
