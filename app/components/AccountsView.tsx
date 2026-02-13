@@ -101,7 +101,7 @@ const AccountsView: React.FC = () => {
 
     const fetchCardOwnership = useCallback(async () => {
         try {
-            const response = await fetch('/api/cards/ownerships');
+            const response = await fetch('/api/cards/ownerships', { cache: 'no-store' });
             if (response.ok) {
                 setCardOwnership(await response.json());
             }
