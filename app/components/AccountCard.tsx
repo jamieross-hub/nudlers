@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
     Box,
     Typography,
@@ -6,12 +6,8 @@ import {
     Tooltip,
     styled,
     alpha,
-    useTheme,
     Chip,
     Switch,
-    TextField,
-    MenuItem,
-    CircularProgress
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import SyncIcon from '@mui/icons-material/Sync';
@@ -19,10 +15,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import CloseIcon from '@mui/icons-material/Close';
-import LinkIcon from '@mui/icons-material/Link';
 import { CardVendorIcon } from './CardVendorsModal';
-import { CREDIT_CARD_VENDORS, BANK_VENDORS } from '../utils/constants';
+import { BANK_VENDORS } from '../utils/constants';
 
 interface CardOwnership {
     id: number;
@@ -51,13 +45,11 @@ interface Account {
 interface AccountCardProps {
     account: Account;
     ownedCards?: CardOwnership[];
-    bankAccounts?: Account[];
     onEdit: (account: Account) => void;
     onSync: (account: Account) => void;
     onTruncate: (account: Account) => void;
     onDelete: (id: number) => void;
     onToggleActive: (account: Account) => void;
-    onUpdateCardLink?: (cardId: number, bankAccountId: number | null) => void;
     onToggleCardVisibility?: (cardId: number, isHidden: boolean) => void;
 }
 
@@ -118,18 +110,14 @@ const CardActions = styled(Box)({
 const AccountCard: React.FC<AccountCardProps> = ({
     account,
     ownedCards = [],
-    bankAccounts = [],
     onEdit,
     onSync,
     onTruncate,
     onDelete,
     onToggleActive,
-    onUpdateCardLink,
     onToggleCardVisibility
 }) => {
-    const theme = useTheme();
     const isBank = BANK_VENDORS.includes(account.vendor);
-    const [isLinking, setIsLinking] = useState<number | null>(null);
 
     const formatLastSync = (dateString?: string) => {
         if (!dateString) return 'Never synced';
@@ -250,9 +238,7 @@ const AccountCard: React.FC<AccountCardProps> = ({
                     {ownedCards.map(card => (
                         <Tooltip key={card.id} title={card.is_hidden
                             ? `${card.account_number.slice(-4)} - Hidden (click to show)`
-                            : card.bank_account_nickname
-                                ? `${card.account_number.slice(-4)} - Linked to ${card.bank_account_nickname}`
-                                : `${card.account_number.slice(-4)} - Not linked to bank`
+                            : `${card.account_number.slice(-4)} - Visible (click to hide)`
                         }>
                             <Chip
                                 size="small"
@@ -265,15 +251,11 @@ const AccountCard: React.FC<AccountCardProps> = ({
                                     e.stopPropagation();
                                     onToggleCardVisibility?.(card.id, !card.is_hidden);
                                 }}
-                                onDelete={(e) => {
-                                    e.stopPropagation();
-                                    onUpdateCardLink?.(card.id, null);
-                                }}
-                                deleteIcon={<LinkIcon sx={{ fontSize: '12px !important', color: 'white !important' }} />}
                                 sx={{
                                     height: '24px',
                                     fontSize: '11px',
                                     fontWeight: 600,
+                                    cursor: 'pointer',
                                     ...(card.is_hidden ? {
                                         bgcolor: alpha('#ef5350', 0.25),
                                         color: alpha('#fff', 0.5),
@@ -285,7 +267,6 @@ const AccountCard: React.FC<AccountCardProps> = ({
                                         color: 'white',
                                         border: `1px solid ${alpha('#66bb6a', 0.5)}`,
                                     }),
-                                    '& .MuiChip-deleteIcon': { color: 'white' }
                                 }}
                             />
                         </Tooltip>

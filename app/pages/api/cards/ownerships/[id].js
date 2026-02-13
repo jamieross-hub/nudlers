@@ -13,12 +13,19 @@ const handler = createApiHandler({
   },
   query: async (req) => {
     const { id } = req.query;
-    const { linked_bank_account_id, custom_bank_account_number, custom_bank_account_nickname } = req.body;
+    const { linked_bank_account_id, custom_bank_account_number, custom_bank_account_nickname, is_hidden } = req.body;
 
     // Build update query dynamically based on provided fields
     const updates = [];
     const params = [id];
     let paramIndex = 2;
+
+    // Handle visibility toggle
+    if (is_hidden !== undefined) {
+      updates.push(`is_hidden = $${paramIndex}`);
+      params.push(is_hidden);
+      paramIndex++;
+    }
 
     // Determine mode: Linking to existing account vs Custom account
     if (linked_bank_account_id && linked_bank_account_id !== -1) {
