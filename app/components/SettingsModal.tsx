@@ -29,6 +29,8 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SendIcon from '@mui/icons-material/Send';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import DeleteAllTransactionsDialog from './DeleteAllTransactionsDialog';
+import DeleteIcon from '@mui/icons-material/Delete';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import ScreenshotViewer from './ScreenshotViewer';
 import ImageIcon from '@mui/icons-material/Image';
 import BugReportIcon from '@mui/icons-material/BugReport';
@@ -36,6 +38,9 @@ import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import { msToSeconds, secondsToMs } from '../utils/settings-utils';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
+import FingerprintIcon from '@mui/icons-material/Fingerprint';
+import LockIcon from '@mui/icons-material/Lock';
+import { useStatus } from '../context/StatusContext';
 
 interface SettingsModalProps {
   open: boolean;
@@ -202,6 +207,7 @@ const StyledSelect = styled(Select)(({ theme }) => ({
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
   const theme = useTheme();
+  const { isVaultLocked, startPasskeyRegistration, clearPasskeys, changePassphrase } = useStatus();
   const [settings, setSettings] = useState<Settings>({
     sync_enabled: false,
     sync_hour: 3,
@@ -306,6 +312,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
   // Delete all transactions dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [screenshotViewerOpen, setScreenshotViewerOpen] = useState(false);
+
+  // Security settings state
+  const [clearingPasskeys, setClearingPasskeys] = useState(false);
+  const [clearPasskeyConfirm, setClearPasskeyConfirm] = useState(false);
+  const [changingPassphrase, setChangingPassphrase] = useState(false);
+  const [showChangePassphrase, setShowChangePassphrase] = useState(false);
+  const [currentPass, setCurrentPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmNewPass, setConfirmNewPass] = useState('');
+  const [securityResult, setSecurityResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -1105,6 +1121,244 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                   )}
                 </Box>
               )}
+            </SettingSection>
+
+            {/* Vault Settings */}
+            <SettingSection>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <LockIcon sx={{ color: '#818cf8' }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  Vault Security
+                </Typography>
+              </Box>
+
+              {securityResult && (
+                <Alert
+                  severity={securityResult.type}
+                  sx={{ mb: 2 }}
+                  onClose={() => setSecurityResult(null)}
+                >
+                  {securityResult.message}
+                </Alert>
+              )}
+
+              <SettingRow>
+                <Box>
+                  <Typography variant="body1">Passkey Authentication</Typography>
+                  <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
+                    Use biometric or security key to unlock your vault without a passphrase.
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  {!isVaultLocked ? (
+                    <>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<FingerprintIcon />}
+                        onClick={async () => {
+                          const pass = prompt("Please enter your current vault passphrase to register a passkey:");
+                          if (pass) {
+                            const result = await startPasskeyRegistration(pass);
+                            if (result.success) {
+                              setSecurityResult({ type: 'success', message: 'Passkey registered successfully!' });
+                            } else {
+                              setSecurityResult({ type: 'error', message: 'Failed to register passkey: ' + result.error });
+                            }
+                          }
+                        }}
+                        sx={{
+                          background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                          '&:hover': {
+                            background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                          },
+                        }}
+                      >
+                        Register Passkey
+                      </Button>
+                    </>
+                  ) : (
+                    <Typography variant="caption" sx={{ color: '#f87171', fontWeight: 600 }}>
+                      Unlock vault to manage passkeys
+                    </Typography>
+                  )}
+                </Box>
+              </SettingRow>
+
+              {/* Clear Passkeys */}
+              <SettingRow>
+                <Box>
+                  <Typography variant="body1">Clear All Passkeys</Typography>
+                  <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
+                    Remove all registered passkeys. You will need to re-register to use biometric unlock.
+                  </Typography>
+                </Box>
+                <Box>
+                  {!isVaultLocked ? (
+                    !clearPasskeyConfirm ? (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => setClearPasskeyConfirm(true)}
+                        disabled={clearingPasskeys}
+                        sx={{
+                          borderColor: '#f87171',
+                          color: '#f87171',
+                          '&:hover': {
+                            borderColor: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                          },
+                        }}
+                      >
+                        Clear Passkeys
+                      </Button>
+                    ) : (
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          color="error"
+                          disabled={clearingPasskeys}
+                          onClick={async () => {
+                            setClearingPasskeys(true);
+                            const result = await clearPasskeys();
+                            if (result.success) {
+                              setSecurityResult({ type: 'success', message: `Cleared ${result.cleared || 0} passkey(s)` });
+                            } else {
+                              setSecurityResult({ type: 'error', message: result.error || 'Failed to clear passkeys' });
+                            }
+                            setClearingPasskeys(false);
+                            setClearPasskeyConfirm(false);
+                          }}
+                        >
+                          {clearingPasskeys ? <CircularProgress size={20} color="inherit" /> : 'Confirm'}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => setClearPasskeyConfirm(false)}
+                          disabled={clearingPasskeys}
+                          sx={{ borderColor: theme.palette.divider, color: theme.palette.text.secondary }}
+                        >
+                          Cancel
+                        </Button>
+                      </Box>
+                    )
+                  ) : (
+                    <Typography variant="caption" sx={{ color: '#f87171', fontWeight: 600 }}>
+                      Unlock vault first
+                    </Typography>
+                  )}
+                </Box>
+              </SettingRow>
+
+              {/* Change Passphrase */}
+              <SettingRow sx={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <Box>
+                    <Typography variant="body1">Change Passphrase</Typography>
+                    <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
+                      Update your vault passphrase. All passkeys will be invalidated.
+                    </Typography>
+                  </Box>
+                  <Box>
+                    {!isVaultLocked ? (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<VpnKeyIcon />}
+                        onClick={() => {
+                          setShowChangePassphrase(!showChangePassphrase);
+                          setCurrentPass('');
+                          setNewPass('');
+                          setConfirmNewPass('');
+                        }}
+                        sx={{
+                          borderColor: '#818cf8',
+                          color: '#818cf8',
+                          '&:hover': {
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                          },
+                        }}
+                      >
+                        {showChangePassphrase ? 'Cancel' : 'Change'}
+                      </Button>
+                    ) : (
+                      <Typography variant="caption" sx={{ color: '#f87171', fontWeight: 600 }}>
+                        Unlock vault first
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+                {showChangePassphrase && (
+                  <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <StyledTextField
+                      type="password"
+                      label="Current Passphrase"
+                      value={currentPass}
+                      onChange={(e) => setCurrentPass(e.target.value)}
+                      size="small"
+                      fullWidth
+                      disabled={changingPassphrase}
+                    />
+                    <StyledTextField
+                      type="password"
+                      label="New Passphrase"
+                      value={newPass}
+                      onChange={(e) => setNewPass(e.target.value)}
+                      size="small"
+                      fullWidth
+                      disabled={changingPassphrase}
+                      helperText="Must be at least 8 characters"
+                    />
+                    <StyledTextField
+                      type="password"
+                      label="Confirm New Passphrase"
+                      value={confirmNewPass}
+                      onChange={(e) => setConfirmNewPass(e.target.value)}
+                      size="small"
+                      fullWidth
+                      disabled={changingPassphrase}
+                    />
+                    <Button
+                      variant="contained"
+                      disabled={changingPassphrase || !currentPass || !newPass || !confirmNewPass || newPass !== confirmNewPass || newPass.length < 8}
+                      onClick={async () => {
+                        if (newPass !== confirmNewPass) {
+                          setSecurityResult({ type: 'error', message: 'New passphrases do not match' });
+                          return;
+                        }
+                        setChangingPassphrase(true);
+                        const result = await changePassphrase(currentPass, newPass);
+                        if (result.success) {
+                          setSecurityResult({
+                            type: 'success',
+                            message: `Passphrase changed successfully${result.passkeysCleared ? `. ${result.passkeysCleared} passkey(s) were invalidated — re-register if needed.` : '.'}`
+                          });
+                          setShowChangePassphrase(false);
+                          setCurrentPass('');
+                          setNewPass('');
+                          setConfirmNewPass('');
+                        } else {
+                          setSecurityResult({ type: 'error', message: result.error || 'Failed to change passphrase' });
+                        }
+                        setChangingPassphrase(false);
+                      }}
+                      sx={{
+                        background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                        '&:hover': {
+                          background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                        },
+                        alignSelf: 'flex-start',
+                      }}
+                    >
+                      {changingPassphrase ? <CircularProgress size={20} color="inherit" /> : 'Update Passphrase'}
+                    </Button>
+                  </Box>
+                )}
+              </SettingRow>
             </SettingSection>
 
             {/* Danger Zone */}

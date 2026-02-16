@@ -1441,6 +1441,250 @@ paths:
         '200':
           description: Credential deleted
 
+  /vault/unlock:
+    post:
+      tags:
+        - Operations
+      summary: Unlock the credential vault
+      description: |
+        Decrypts the master key using the provided passphrase and stores it in memory.
+        This allows the application to decrypt stored credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - passphrase
+              properties:
+                passphrase:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Vault unlocked successfully
+        '400':
+          description: Missing passphrase
+        '401':
+          description: Invalid passphrase
+        '500':
+          description: Server configuration error
+
+  /vault/passkey/register-options:
+    get:
+      tags:
+        - Operations
+      summary: Get passkey registration options
+      responses:
+        '200':
+          description: Registration options
+        '500':
+          description: Server error
+
+  /vault/passkey/register-verify:
+    post:
+      tags:
+        - Operations
+      summary: Verify passkey registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - registrationResponse
+                - passphrase
+              properties:
+                registrationResponse:
+                  type: object
+                passphrase:
+                  type: string
+      responses:
+        '200':
+          description: Passkey registered successfully
+        '400':
+          description: Verification failed
+        '500':
+          description: Server error
+
+  /vault/passkey/login-options:
+    get:
+      tags:
+        - Operations
+      summary: Get passkey login options
+      responses:
+        '200':
+          description: Authentication options
+        '500':
+          description: Server error
+
+  /vault/passkey/login-verify:
+    post:
+      tags:
+        - Operations
+      summary: Verify passkey login and unlock vault
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - authenticationResponse
+              properties:
+                authenticationResponse:
+                  type: object
+      responses:
+        '200':
+          description: Vault unlocked successfully
+        '400':
+          description: Verification failed
+        '401':
+          description: Unlock failed
+        '500':
+          description: Server error
+
+  /vault/passkey/clear:
+    delete:
+      tags:
+        - Operations
+      summary: Clear all registered passkeys
+      description: |
+        Removes all registered passkeys from the database.
+        Requires the vault to be unlocked.
+      responses:
+        '200':
+          description: Passkeys cleared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  cleared:
+                    type: integer
+                    description: Number of passkeys removed
+        '403':
+          description: Vault is locked
+        '500':
+          description: Server error
+
+  /vault/change-passphrase:
+    post:
+      tags:
+        - Operations
+      summary: Change vault passphrase
+      description: |
+        Re-wraps the master key with a new passphrase. Requires the current passphrase
+        for verification. All registered passkeys are invalidated since they store
+        an encrypted copy of the old passphrase.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currentPassphrase
+                - newPassphrase
+              properties:
+                currentPassphrase:
+                  type: string
+                  format: password
+                newPassphrase:
+                  type: string
+                  format: password
+                  minLength: 8
+      responses:
+        '200':
+          description: Passphrase changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  passkeysCleared:
+                    type: integer
+        '400':
+          description: Invalid input (missing fields, passphrase too short, or same passphrase)
+        '401':
+          description: Current passphrase is incorrect
+        '403':
+          description: Vault is locked
+        '500':
+          description: Server error
+
+  /vault/status:
+    get:
+      tags:
+        - Operations
+      summary: Get vault status
+      description: Returns whether the vault is currently locked or unlocked.
+      responses:
+        '200':
+          description: Vault status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  locked:
+                    type: boolean
+                  initialized:
+                    type: boolean
+                    description: True if the vault is initialized in the database.
+                  needsMigration:
+                    type: boolean
+                    description: True if a legacy NUDLERS_ENCRYPTION_KEY is detected and vault is not yet initialized.
+
+  /vault/migrate:
+    post:
+      tags:
+        - Operations
+      summary: Migrate from legacy encryption to vault
+      description: |
+        Re-encrypts all stored credentials from the legacy NUDLERS_ENCRYPTION_KEY
+        to a new vault master key, wrapped with the provided passphrase.
+        This is a one-time operation for users upgrading from the old encryption system.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - passphrase
+              properties:
+                passphrase:
+                  type: string
+                  format: password
+                  minLength: 8
+      responses:
+        '200':
+          description: Migration completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  migratedCount:
+                    type: integer
+        '400':
+          description: No legacy key found or vault already initialized
+        '500':
+          description: Migration failed (no data changed)
+
   /scrapers/run:
     post:
       tags:

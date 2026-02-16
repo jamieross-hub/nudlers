@@ -23,10 +23,21 @@ const makeSyncStatus = (health: string, accounts = 3) => ({
 const mockStatusValue = (health: string, accounts?: number) => ({
     isDbConnected: true,
     dbError: false,
+    isVaultLocked: false,
+    isVaultInitialized: true,
+    needsMigration: false,
+    isVaultModalOpen: false,
+    setIsVaultModalOpen: () => { },
     syncStatus: makeSyncStatus(health, accounts),
-    refreshStatus: async () => {},
-    checkDb: async () => {},
-    setFullPolling: () => {},
+    refreshStatus: async () => { },
+    checkDb: async () => { },
+    unlockVault: async () => ({ success: true as const }),
+    initializeVault: async () => ({ success: true as const }),
+    migrateVault: async () => ({ success: true as const }),
+    lockVault: async () => ({ success: true as const }),
+    unlockWithPasskey: async () => ({ success: true as const }),
+    startPasskeyRegistration: async () => ({ success: true as const }),
+    setFullPolling: () => { },
 });
 
 const meta: Meta<typeof SyncStatusIndicator> = {
@@ -55,7 +66,7 @@ export const Healthy: Story = {
             </StatusContext.Provider>
         ),
     ],
-    args: { onClick: () => {} },
+    args: { onClick: () => { } },
 };
 
 export const Syncing: Story = {
@@ -66,7 +77,7 @@ export const Syncing: Story = {
             </StatusContext.Provider>
         ),
     ],
-    args: { onClick: () => {} },
+    args: { onClick: () => { } },
 };
 
 export const Error: Story = {
@@ -77,7 +88,7 @@ export const Error: Story = {
             </StatusContext.Provider>
         ),
     ],
-    args: { onClick: () => {} },
+    args: { onClick: () => { } },
 };
 
 export const Stale: Story = {
@@ -88,7 +99,7 @@ export const Stale: Story = {
             </StatusContext.Provider>
         ),
     ],
-    args: { onClick: () => {} },
+    args: { onClick: () => { } },
 };
 
 export const Outdated: Story = {
@@ -99,7 +110,7 @@ export const Outdated: Story = {
             </StatusContext.Provider>
         ),
     ],
-    args: { onClick: () => {} },
+    args: { onClick: () => { } },
 };
 
 export const NoAccounts: Story = {
@@ -110,7 +121,7 @@ export const NoAccounts: Story = {
             </StatusContext.Provider>
         ),
     ],
-    args: { onClick: () => {} },
+    args: { onClick: () => { } },
 };
 
 export const NeverSynced: Story = {
@@ -121,5 +132,5 @@ export const NeverSynced: Story = {
             </StatusContext.Provider>
         ),
     ],
-    args: { onClick: () => {} },
+    args: { onClick: () => { } },
 };
