@@ -110,7 +110,6 @@ export function decryptWithKey(encryptedText, keyBuffer) {
 
     return decrypted;
   } catch (err) {
-    // console.error('Decryption error:', err);
     throw new Error('Decryption failed: invalid key or corrupted data');
   }
 }
