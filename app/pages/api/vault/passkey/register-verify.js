@@ -7,10 +7,11 @@ import VaultStore from '../../utils/VaultStore';
 const rpID = process.env.WEBAUTHN_RP_ID || 'localhost';
 const origin = process.env.WEBAUTHN_ORIGIN || 'http://localhost:6969';
 const PASSKEY_ENCRYPTION_SECRET = process.env.PASSKEY_ENCRYPTION_SECRET || 'nudlers-passkey-default-secret-change-it';
+const PASSKEY_SCRYPT_SALT = 'nudlers-passkey-scrypt-salt';
 
 function encryptPassphrase(passphrase) {
     const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv('aes-256-gcm', crypto.scryptSync(PASSKEY_ENCRYPTION_SECRET, 'salt', 32), iv);
+    const cipher = crypto.createCipheriv('aes-256-gcm', crypto.scryptSync(PASSKEY_ENCRYPTION_SECRET, PASSKEY_SCRYPT_SALT, 32), iv);
     let encrypted = cipher.update(passphrase, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     const tag = cipher.getAuthTag().toString('hex');

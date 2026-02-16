@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Typography, TextField, Button, Dialog, DialogContent, InputAdornment, IconButton, CircularProgress, Alert } from '@mui/material';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import Visibility from '@mui/icons-material/Visibility';
@@ -55,22 +55,8 @@ const VaultLockScreen: React.FC = () => {
     const isUnlock = isVaultInitialized && !needsMigration;
 
     // Default to passkey if passkeys are registered and we're in unlock mode
-    const [authMode, setAuthMode] = useState<AuthMode>('passphrase');
-
-    useEffect(() => {
-        if (isUnlock && hasPasskeys && isVaultModalOpen) {
-            setAuthMode('passkey');
-        } else {
-            setAuthMode('passphrase');
-        }
-    }, [isUnlock, hasPasskeys, isVaultModalOpen]);
-
-    // Auto-trigger passkey when modal opens and passkeys are available
-    useEffect(() => {
-        if (isVaultModalOpen && isUnlock && hasPasskeys && authMode === 'passkey' && !loading) {
-            handlePasskeyUnlock();
-        }
-    }, [isVaultModalOpen, authMode]); // eslint-disable-line react-hooks/exhaustive-deps
+    const [authModeOverride, setAuthModeOverride] = useState<AuthMode | null>(null);
+    const authMode: AuthMode = authModeOverride ?? (isUnlock && hasPasskeys && isVaultModalOpen ? 'passkey' : 'passphrase');
 
     const handleClose = () => {
         if (!loading) {
@@ -79,10 +65,11 @@ const VaultLockScreen: React.FC = () => {
             setPassphrase('');
             setConfirmPassphrase('');
             setShowPasskeySetup(false);
+            setAuthModeOverride(null);
         }
     };
 
-    const handlePasskeyUnlock = async () => {
+    const handlePasskeyUnlock = useCallback(async () => {
         setLoading(true);
         setError(null);
         const result = await unlockWithPasskey();
@@ -94,7 +81,16 @@ const VaultLockScreen: React.FC = () => {
             setPassphrase('');
         }
         setLoading(false);
-    };
+    }, [unlockWithPasskey, setIsVaultModalOpen]);
+
+    // Auto-trigger passkey when modal opens and passkeys are available.
+    // handlePasskeyUnlock is async and calls setState after an await, not synchronously.
+    useEffect(() => {
+        if (isVaultModalOpen && isUnlock && hasPasskeys && authMode === 'passkey' && !loading) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- async setState after browser prompt, not synchronous
+            handlePasskeyUnlock();
+        }
+    }, [isVaultModalOpen, authMode, isUnlock, hasPasskeys, loading, handlePasskeyUnlock]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -289,8 +285,8 @@ const VaultLockScreen: React.FC = () => {
                                         background: 'linear-gradient(135deg, var(--n-primary-600) 0%, var(--n-primary-700) 100%)',
                                     },
                                     '&.Mui-disabled': {
-                                        background: 'rgba(255, 255, 255, 0.1)',
-                                        color: 'rgba(255, 255, 255, 0.3)'
+                                        background: 'var(--n-bg-surface-alt)',
+                                        color: 'var(--n-text-muted)'
                                     }
                                 }}
                             >
@@ -301,7 +297,7 @@ const VaultLockScreen: React.FC = () => {
                                 fullWidth
                                 variant="text"
                                 onClick={() => {
-                                    setAuthMode('passphrase');
+                                    setAuthModeOverride('passphrase');
                                     setError(null);
                                 }}
                                 disabled={loading}
@@ -436,8 +432,8 @@ const VaultLockScreen: React.FC = () => {
                                             background: 'linear-gradient(135deg, var(--n-primary-600) 0%, var(--n-primary-700) 100%)',
                                         },
                                         '&.Mui-disabled': {
-                                            background: 'rgba(255, 255, 255, 0.1)',
-                                            color: 'rgba(255, 255, 255, 0.3)'
+                                            background: 'var(--n-bg-surface-alt)',
+                                            color: 'var(--n-text-muted)'
                                         }
                                     }}
                                 >
@@ -449,7 +445,7 @@ const VaultLockScreen: React.FC = () => {
                                         fullWidth
                                         variant="text"
                                         onClick={() => {
-                                            setAuthMode('passkey');
+                                            setAuthModeOverride('passkey');
                                             setError(null);
                                         }}
                                         disabled={loading}

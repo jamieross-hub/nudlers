@@ -69,15 +69,15 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'New passphrase must be different from the current one' });
     }
 
+    let client;
     try {
-        const client = await getDB();
+        client = await getDB();
 
         // 1. Get the current wrapped master key
         const result = await client.query("SELECT value FROM app_settings WHERE key = 'wrapped_master_key'");
         const dbKey = result.rows[0]?.value;
 
         if (!dbKey) {
-            client.release();
             return res.status(400).json({ error: 'Vault is not initialized' });
         }
 
@@ -93,7 +93,6 @@ export default async function handler(req, res) {
         try {
             masterKey = unwrapMasterKey(wrappedKeyStr, currentPassphrase);
         } catch {
-            client.release();
             return res.status(401).json({ error: 'Current passphrase is incorrect' });
         }
 
@@ -111,8 +110,6 @@ export default async function handler(req, res) {
         const passkeysResult = await client.query('DELETE FROM vault_passkeys');
         const passkeysCleared = passkeysResult.rowCount || 0;
 
-        client.release();
-
         logger.info({ passkeysCleared }, 'Passphrase changed successfully, passkeys invalidated');
 
         res.status(200).json({
@@ -123,5 +120,7 @@ export default async function handler(req, res) {
     } catch (err) {
         logger.error({ error: err.message }, 'Failed to change passphrase');
         res.status(500).json({ error: 'Failed to change passphrase' });
+    } finally {
+        if (client) client.release();
     }
 }

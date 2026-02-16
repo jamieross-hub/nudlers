@@ -7,12 +7,13 @@ import logger from '../../../../utils/logger.js';
 const rpID = process.env.WEBAUTHN_RP_ID || 'localhost';
 const origin = process.env.WEBAUTHN_ORIGIN || 'http://localhost:6969';
 const PASSKEY_ENCRYPTION_SECRET = process.env.PASSKEY_ENCRYPTION_SECRET || 'nudlers-passkey-default-secret-change-it';
+const PASSKEY_SCRYPT_SALT = 'nudlers-passkey-scrypt-salt';
 
 function decryptPassphrase(encryptedData) {
     const [ivHex, encrypted, tagHex] = encryptedData.split(':');
     const iv = Buffer.from(ivHex, 'hex');
     const tag = Buffer.from(tagHex, 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-gcm', crypto.scryptSync(PASSKEY_ENCRYPTION_SECRET, 'salt', 32), iv);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', crypto.scryptSync(PASSKEY_ENCRYPTION_SECRET, PASSKEY_SCRYPT_SALT, 32), iv);
     decipher.setAuthTag(tag);
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');

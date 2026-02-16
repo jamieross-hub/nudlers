@@ -13,11 +13,11 @@ export async function unlockVaultWithPassphrase(passphrase) {
     }
 
     let wrappedKey;
+    let client;
 
     try {
-        const client = await getDB();
+        client = await getDB();
         const result = await client.query("SELECT value FROM app_settings WHERE key = 'wrapped_master_key'");
-        client.release();
         const dbKey = result.rows[0]?.value;
         if (typeof dbKey === 'string' && dbKey.length > 0) {
             try {
@@ -29,6 +29,8 @@ export async function unlockVaultWithPassphrase(passphrase) {
     } catch (err) {
         logger.error({ error: err.message }, "Failed to read vault key from DB");
         return { success: false, error: 'Failed to access vault configuration' };
+    } finally {
+        if (client) client.release();
     }
 
     if (!wrappedKey) {
