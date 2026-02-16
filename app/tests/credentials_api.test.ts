@@ -11,7 +11,15 @@ vi.mock('../utils/logger.js', () => ({
 // Mock encryption with deterministic behavior
 vi.mock('../pages/api/utils/encryption', () => ({
     encrypt: vi.fn((text) => `encrypted:${text}`),
-    decrypt: vi.fn((text) => text.replace('encrypted:', ''))
+    decrypt: vi.fn((text) => text.replace('encrypted:', '')),
+    safeDecrypt: vi.fn((text) => text.replace('encrypted:', '')),
+    VaultLockedError: class VaultLockedError extends Error {
+        constructor() {
+            super('Vault is locked');
+            this.name = 'VaultLockedError';
+            this.status = 401;
+        }
+    }
 }));
 
 import { getDB } from '../pages/api/db';
