@@ -12,6 +12,7 @@ const baseMockValue = {
     needsMigration: false,
     hasPasskeys: false,
     passkeysCount: 0,
+    supportsWebAuthn: true,
     isVaultModalOpen: true,
     setIsVaultModalOpen: () => { },
     syncStatus: null,

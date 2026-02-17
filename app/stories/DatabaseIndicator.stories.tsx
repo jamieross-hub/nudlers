@@ -12,6 +12,7 @@ const mockStatusValue = (overrides: Partial<{ isDbConnected: boolean }>) => ({
     needsMigration: false,
     hasPasskeys: false,
     passkeysCount: 0,
+    supportsWebAuthn: true,
     isVaultModalOpen: false,
     setIsVaultModalOpen: () => { },
     syncStatus: null,

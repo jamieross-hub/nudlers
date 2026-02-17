@@ -207,7 +207,7 @@ const StyledSelect = styled(Select)(({ theme }) => ({
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
   const theme = useTheme();
-  const { isVaultLocked, startPasskeyRegistration, clearPasskeys, deletePasskey, fetchPasskeys, changePassphrase, hasPasskeys, passkeysCount } = useStatus();
+  const { isVaultLocked, startPasskeyRegistration, clearPasskeys, deletePasskey, fetchPasskeys, changePassphrase, hasPasskeys, passkeysCount, supportsWebAuthn } = useStatus();
   const [settings, setSettings] = useState<Settings>({
     sync_enabled: false,
     sync_hour: 3,
@@ -325,6 +325,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
   const [newPass, setNewPass] = useState('');
   const [confirmNewPass, setConfirmNewPass] = useState('');
   const [securityResult, setSecurityResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [showPasskeyRegister, setShowPasskeyRegister] = useState(false);
+  const [passkeyRegPass, setPasskeyRegPass] = useState('');
+  const [registeringPasskey, setRegisteringPasskey] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -1145,48 +1148,102 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                 </Alert>
               )}
 
-              <SettingRow>
-                <Box>
-                  <Typography variant="body1">Passkey Authentication</Typography>
-                  <Typography variant="caption" sx={{ color: 'var(--n-text-secondary)' }}>
-                    Use biometric or security key to unlock your vault without a passphrase.
-                  </Typography>
+              <SettingRow sx={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="body1">Passkey Authentication</Typography>
+                    <Typography variant="caption" sx={{ color: 'var(--n-text-secondary)' }}>
+                      {supportsWebAuthn
+                        ? 'Use biometric or security key to unlock your vault without a passphrase.'
+                        : 'Passkeys are not supported in this browser.'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    {isVaultLocked ? (
+                      <Typography variant="caption" sx={{ color: 'var(--n-error)', fontWeight: 600 }}>
+                        Unlock vault to manage passkeys
+                      </Typography>
+                    ) : !supportsWebAuthn ? (
+                      <Typography variant="caption" sx={{ color: 'var(--n-text-tertiary)', fontWeight: 600 }}>
+                        Not available
+                      </Typography>
+                    ) : !showPasskeyRegister ? (
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<FingerprintIcon />}
+                        onClick={() => setShowPasskeyRegister(true)}
+                        sx={{
+                          background: 'linear-gradient(135deg, var(--n-primary-500) 0%, var(--n-primary-600) 100%)',
+                          '&:hover': {
+                            background: 'linear-gradient(135deg, var(--n-primary-600) 0%, var(--n-primary-700) 100%)',
+                          },
+                        }}
+                      >
+                        Register Passkey
+                      </Button>
+                    ) : null}
+                  </Box>
                 </Box>
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  {!isVaultLocked ? (
+                {showPasskeyRegister && !isVaultLocked && (
+                  <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
+                    <StyledTextField
+                      type="password"
+                      label="Vault Passphrase"
+                      placeholder="Enter your passphrase to confirm"
+                      value={passkeyRegPass}
+                      onChange={(e) => setPasskeyRegPass(e.target.value)}
+                      size="small"
+                      disabled={registeringPasskey}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && passkeyRegPass) {
+                          e.preventDefault();
+                          (e.target as HTMLInputElement).closest('form')?.requestSubmit();
+                        }
+                      }}
+                      sx={{ flex: 1 }}
+                    />
                     <Button
                       variant="contained"
                       size="small"
-                      startIcon={<FingerprintIcon />}
+                      disabled={!passkeyRegPass || registeringPasskey}
                       onClick={async () => {
-                        const pass = prompt("Please enter your current vault passphrase to register a passkey:");
-                        if (pass) {
-                          const result = await startPasskeyRegistration(pass);
-                          if (result.success) {
-                            setSecurityResult({ type: 'success', message: 'Passkey registered successfully!' });
-                            // Refresh the passkey list
-                            const passkeys = await fetchPasskeys();
-                            setPasskeyList(passkeys);
-                          } else {
-                            setSecurityResult({ type: 'error', message: 'Failed to register passkey: ' + result.error });
-                          }
+                        setRegisteringPasskey(true);
+                        setSecurityResult(null);
+                        const result = await startPasskeyRegistration(passkeyRegPass);
+                        if (result.success) {
+                          setSecurityResult({ type: 'success', message: 'Passkey registered successfully!' });
+                          const passkeys = await fetchPasskeys();
+                          setPasskeyList(passkeys);
+                          setShowPasskeyRegister(false);
+                          setPasskeyRegPass('');
+                        } else {
+                          setSecurityResult({ type: 'error', message: 'Failed to register passkey: ' + result.error });
                         }
+                        setRegisteringPasskey(false);
                       }}
                       sx={{
                         background: 'linear-gradient(135deg, var(--n-primary-500) 0%, var(--n-primary-600) 100%)',
                         '&:hover': {
                           background: 'linear-gradient(135deg, var(--n-primary-600) 0%, var(--n-primary-700) 100%)',
                         },
+                        minWidth: 'auto',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      Register Passkey
+                      {registeringPasskey ? <CircularProgress size={20} color="inherit" /> : 'Confirm'}
                     </Button>
-                  ) : (
-                    <Typography variant="caption" sx={{ color: 'var(--n-error)', fontWeight: 600 }}>
-                      Unlock vault to manage passkeys
-                    </Typography>
-                  )}
-                </Box>
+                    <Button
+                      variant="text"
+                      size="small"
+                      disabled={registeringPasskey}
+                      onClick={() => { setShowPasskeyRegister(false); setPasskeyRegPass(''); }}
+                      sx={{ color: 'var(--n-text-secondary)', minWidth: 'auto' }}
+                    >
+                      Cancel
+                    </Button>
+                  </Box>
+                )}
               </SettingRow>
 
               {/* Registered Passkeys List */}
@@ -1318,7 +1375,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                   </Box>
                 )}
 
-                {!isVaultLocked && passkeyList.length === 0 && !loadingPasskeys && passkeysCount === 0 && (
+                {!isVaultLocked && passkeyList.length === 0 && !loadingPasskeys && passkeysCount === 0 && supportsWebAuthn && (
                   <Typography variant="caption" sx={{ color: 'var(--n-text-muted)', fontStyle: 'italic' }}>
                     No passkeys registered yet. Register one above to enable biometric unlock.
                   </Typography>

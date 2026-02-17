@@ -28,6 +28,7 @@ const mockStatusValue = (health: string, accounts?: number) => ({
     needsMigration: false,
     hasPasskeys: false,
     passkeysCount: 0,
+    supportsWebAuthn: true,
     isVaultModalOpen: false,
     setIsVaultModalOpen: () => { },
     syncStatus: makeSyncStatus(health, accounts),

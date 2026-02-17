@@ -40,6 +40,7 @@ const VaultLockScreen: React.FC = () => {
         unlockWithPasskey, startPasskeyRegistration,
         isVaultInitialized, needsMigration, hasPasskeys,
         isVaultModalOpen, setIsVaultModalOpen,
+        supportsWebAuthn,
     } = useStatus();
 
     const [passphrase, setPassphrase] = useState('');
@@ -56,7 +57,7 @@ const VaultLockScreen: React.FC = () => {
 
     // Default to passkey if passkeys are registered and we're in unlock mode
     const [authModeOverride, setAuthModeOverride] = useState<AuthMode | null>(null);
-    const authMode: AuthMode = authModeOverride ?? (isUnlock && hasPasskeys && isVaultModalOpen ? 'passkey' : 'passphrase');
+    const authMode: AuthMode = authModeOverride ?? (isUnlock && hasPasskeys && supportsWebAuthn && isVaultModalOpen ? 'passkey' : 'passphrase');
 
     const handleClose = () => {
         if (!loading) {
@@ -86,11 +87,11 @@ const VaultLockScreen: React.FC = () => {
     // Auto-trigger passkey when modal opens and passkeys are available.
     // handlePasskeyUnlock is async and calls setState after an await, not synchronously.
     useEffect(() => {
-        if (isVaultModalOpen && isUnlock && hasPasskeys && authMode === 'passkey' && !loading) {
+        if (isVaultModalOpen && isUnlock && hasPasskeys && supportsWebAuthn && authMode === 'passkey' && !loading) {
             // eslint-disable-next-line react-hooks/set-state-in-effect -- async setState after browser prompt, not synchronous
             handlePasskeyUnlock();
         }
-    }, [isVaultModalOpen, authMode, isUnlock, hasPasskeys, loading, handlePasskeyUnlock]);
+    }, [isVaultModalOpen, authMode, isUnlock, hasPasskeys, supportsWebAuthn, loading, handlePasskeyUnlock]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -126,7 +127,7 @@ const VaultLockScreen: React.FC = () => {
             setLoading(false);
         } else {
             setLoading(false);
-            if (isActionInitOrMigrate) {
+            if (isActionInitOrMigrate && supportsWebAuthn) {
                 setShowPasskeySetup(true);
             } else {
                 setIsVaultModalOpen(false);

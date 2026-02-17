@@ -53,6 +53,7 @@ interface StatusContextType {
     needsMigration: boolean;
     hasPasskeys: boolean;
     passkeysCount: number;
+    supportsWebAuthn: boolean;
     isVaultModalOpen: boolean;
     setIsVaultModalOpen: (open: boolean) => void;
     syncStatus: SyncStatus | null;
@@ -91,12 +92,32 @@ export const StatusProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const [needsMigration, setNeedsMigration] = useState(false);
     const [hasPasskeys, setHasPasskeys] = useState(false);
     const [passkeysCount, setPasskeysCount] = useState(0);
+    const [supportsWebAuthn, setSupportsWebAuthn] = useState(false);
     const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
     const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
     const [isFullPolling, setIsFullPolling] = useState(false);
 
     const isRefreshing = useRef(false);
     const isCheckingDb = useRef(false);
+
+    // Detect WebAuthn support once on mount
+    useEffect(() => {
+        const check = async () => {
+            try {
+                if (typeof window !== 'undefined' &&
+                    window.PublicKeyCredential &&
+                    typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+                    const available = await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+                    setSupportsWebAuthn(available);
+                } else {
+                    setSupportsWebAuthn(false);
+                }
+            } catch {
+                setSupportsWebAuthn(false);
+            }
+        };
+        check();
+    }, []);
 
     const checkDb = useCallback(async () => {
         if (isCheckingDb.current) return;
@@ -235,6 +256,9 @@ export const StatusProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const startPasskeyRegistration = useCallback(async (passphrase: string) => {
         try {
+            if (!supportsWebAuthn) {
+                return { success: false, error: 'Passkeys are not supported in this browser. A browser with WebAuthn support (e.g. Chrome, Safari, Edge) is required.' };
+            }
             const { startRegistration } = await import('@simplewebauthn/browser');
 
             // 1. Get options from server
@@ -262,10 +286,13 @@ export const StatusProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             logger.error('Passkey registration failed', error as Error);
             return { success: false, error: (error as Error).message };
         }
-    }, [refreshStatus]);
+    }, [refreshStatus, supportsWebAuthn]);
 
     const unlockWithPasskey = useCallback(async () => {
         try {
+            if (!supportsWebAuthn) {
+                return { success: false, error: 'Passkeys are not supported in this browser.' };
+            }
             const { startAuthentication } = await import('@simplewebauthn/browser');
 
             // 1. Get options from server
@@ -294,7 +321,7 @@ export const StatusProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             logger.error('Passkey login failed', error as Error);
             return { success: false, error: (error as Error).message };
         }
-    }, [refreshStatus]);
+    }, [refreshStatus, supportsWebAuthn]);
 
     const clearPasskeys = useCallback(async () => {
         try {
@@ -432,6 +459,7 @@ export const StatusProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         needsMigration,
         hasPasskeys,
         passkeysCount,
+        supportsWebAuthn,
         isVaultModalOpen,
         setIsVaultModalOpen,
         syncStatus,
