@@ -3,9 +3,17 @@ import { getDB } from '../pages/api/db';
 import VaultStore from '../pages/api/utils/VaultStore';
 import logger from './logger.js';
 
+// Kept only for migrating pre-existing vaults that were created before
+// per-vault random salts were introduced. Never used for new vaults.
+const LEGACY_SALT = 'nudlers-vault-salt';
+
 /**
  * Core logic to unlock the vault with a passphrase.
  * Returns { success: boolean, error?: string }
+ *
+ * If the vault was created before random salts were introduced it will be
+ * transparently migrated: on the first successful unlock the wrapped key is
+ * re-stored with a fresh random salt so subsequent unlocks use it.
  */
 export async function unlockVaultWithPassphrase(passphrase) {
     if (!passphrase) {
@@ -13,17 +21,20 @@ export async function unlockVaultWithPassphrase(passphrase) {
     }
 
     let wrappedKey;
+    let storedSaltHex;
     let client;
 
     try {
         client = await getDB();
-        const result = await client.query("SELECT value FROM app_settings WHERE key = 'wrapped_master_key'");
-        const dbKey = result.rows[0]?.value;
-        if (typeof dbKey === 'string' && dbKey.length > 0) {
-            try {
-                wrappedKey = JSON.parse(dbKey);
-            } catch (e) {
-                wrappedKey = dbKey;
+        const result = await client.query(
+            "SELECT key, value FROM app_settings WHERE key IN ('wrapped_master_key', 'vault_salt')"
+        );
+        for (const row of result.rows) {
+            if (row.key === 'wrapped_master_key') {
+                const raw = row.value;
+                try { wrappedKey = JSON.parse(raw); } catch { wrappedKey = raw; }
+            } else if (row.key === 'vault_salt') {
+                storedSaltHex = row.value;
             }
         }
     } catch (err) {
@@ -37,8 +48,10 @@ export async function unlockVaultWithPassphrase(passphrase) {
         return { success: false, error: 'Vault is not initialized (no key found in database)' };
     }
 
+    const isLegacy = !storedSaltHex;
+    const salt = isLegacy ? Buffer.from(LEGACY_SALT) : Buffer.from(storedSaltHex, 'hex');
+
     try {
-        const salt = 'nudlers-vault-salt';
         const wrappingKey = crypto.scryptSync(passphrase, salt, 32);
 
         const [ivHex, encryptedData, authTagHex] = wrappedKey.split(':');
@@ -57,9 +70,50 @@ export async function unlockVaultWithPassphrase(passphrase) {
         VaultStore.setKey(decryptedMasterKey);
         wrappingKey.fill(0);
 
+        if (isLegacy) {
+            // Transparently upgrade: re-wrap with a new random salt and persist it.
+            migrateLegacyVault(passphrase, decryptedMasterKey).catch((migrateErr) => {
+                logger.error({ error: migrateErr.message }, 'Failed to migrate vault to random salt');
+            });
+        }
+
         return { success: true };
     } catch (err) {
         logger.error({ error: err.message }, "Failed to unlock vault");
         return { success: false, error: 'Invalid passphrase or corrupted master key' };
+    }
+}
+
+/**
+ * Re-wraps the master key with a fresh random salt and persists both to the DB.
+ * Called once, lazily, the first time a legacy vault is successfully unlocked.
+ */
+async function migrateLegacyVault(passphrase, masterKey) {
+    const newSalt = crypto.randomBytes(32);
+    const newWrappingKey = crypto.scryptSync(passphrase, newSalt, 32);
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', newWrappingKey, iv);
+    const wrapped = Buffer.concat([cipher.update(masterKey), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    newWrappingKey.fill(0);
+
+    const newWrappedStr = `${iv.toString('hex')}:${wrapped.toString('hex')}:${authTag.toString('hex')}`;
+
+    let client;
+    try {
+        client = await getDB();
+        await client.query(
+            `INSERT INTO app_settings (key, value, description)
+             VALUES ('vault_salt', $1, 'Random salt for vault key derivation (scrypt)')
+             ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [newSalt.toString('hex')]
+        );
+        await client.query(
+            "UPDATE app_settings SET value = $1 WHERE key = 'wrapped_master_key'",
+            [JSON.stringify(newWrappedStr)]
+        );
+        logger.info('Vault migrated to per-vault random salt');
+    } finally {
+        if (client) client.release();
     }
 }
