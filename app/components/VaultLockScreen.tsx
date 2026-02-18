@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Typography, TextField, Button, Dialog, DialogContent, InputAdornment, IconButton, CircularProgress, Alert } from '@mui/material';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import Visibility from '@mui/icons-material/Visibility';
@@ -59,6 +59,9 @@ const VaultLockScreen: React.FC = () => {
     const [authModeOverride, setAuthModeOverride] = useState<AuthMode | null>(null);
     const authMode: AuthMode = authModeOverride ?? (isUnlock && hasPasskeys && supportsWebAuthn && isVaultModalOpen ? 'passkey' : 'passphrase');
 
+    // Prevent auto-trigger loop
+    const hasAutoTriggered = useRef(false);
+
     const handleClose = () => {
         if (!loading) {
             setIsVaultModalOpen(false);
@@ -67,6 +70,7 @@ const VaultLockScreen: React.FC = () => {
             setConfirmPassphrase('');
             setShowPasskeySetup(false);
             setAuthModeOverride(null);
+            hasAutoTriggered.current = false;
         }
     };
 
@@ -75,8 +79,24 @@ const VaultLockScreen: React.FC = () => {
         setError(null);
         const result = await unlockWithPasskey();
         if (!result.success) {
-            setError(result.error || 'Passkey authentication failed');
-            // On failure, stay in passkey mode but allow switching
+            // Check for user cancellation or timeout
+            const errorMessage = result.error || '';
+            const isCancelled = errorMessage.includes('NotAllowedError') ||
+                errorMessage.includes('not allowed') ||
+                errorMessage.includes('timed out') ||
+                errorMessage.includes('User cancelled') ||
+                errorMessage.includes('AbortError') ||
+                errorMessage.includes('aborted');
+
+            if (isCancelled) {
+                // Determine if we should fallback to passphrase
+                // If it was a cancellation, we likely want to show the passphrase screen
+                setAuthModeOverride('passphrase');
+                // Don't show an error for explicit cancellation, it's annoying
+                setError(null);
+            } else {
+                setError(result.error || 'Passkey authentication failed');
+            }
         } else {
             setIsVaultModalOpen(false);
             setPassphrase('');
@@ -85,10 +105,9 @@ const VaultLockScreen: React.FC = () => {
     }, [unlockWithPasskey, setIsVaultModalOpen]);
 
     // Auto-trigger passkey when modal opens and passkeys are available.
-    // handlePasskeyUnlock is async and calls setState after an await, not synchronously.
     useEffect(() => {
-        if (isVaultModalOpen && isUnlock && hasPasskeys && supportsWebAuthn && authMode === 'passkey' && !loading) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- async setState after browser prompt, not synchronous
+        if (isVaultModalOpen && isUnlock && hasPasskeys && supportsWebAuthn && authMode === 'passkey' && !loading && !hasAutoTriggered.current) {
+            hasAutoTriggered.current = true;
             handlePasskeyUnlock();
         }
     }, [isVaultModalOpen, authMode, isUnlock, hasPasskeys, supportsWebAuthn, loading, handlePasskeyUnlock]);
@@ -299,6 +318,7 @@ const VaultLockScreen: React.FC = () => {
                                 variant="text"
                                 onClick={() => {
                                     setAuthModeOverride('passphrase');
+                                    hasAutoTriggered.current = true; // Also treat manual switch as "already triggered" to prevent flip-flop
                                     setError(null);
                                 }}
                                 disabled={loading}
