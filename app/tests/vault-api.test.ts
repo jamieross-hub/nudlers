@@ -9,7 +9,12 @@ vi.mock('../utils/logger.js', () => ({
     default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() }
 }));
 
+vi.mock('../utils/vault-utils', () => ({
+    unlockVaultWithPassphrase: vi.fn()
+}));
+
 import { getDB } from '../pages/api/db';
+import { unlockVaultWithPassphrase } from '../utils/vault-utils';
 import VaultStore from '../pages/api/utils/VaultStore';
 import initializeHandler from '../pages/api/vault/initialize';
 import unlockHandler from '../pages/api/vault/unlock';
@@ -255,6 +260,7 @@ describe('Passkey API Routes', () => {
             release: vi.fn()
         };
         (getDB as any).mockResolvedValue(mockClient);
+        (unlockVaultWithPassphrase as any).mockResolvedValue({ success: true });
 
         mockRes = {
             status: vi.fn().mockReturnThis(),
@@ -401,6 +407,20 @@ describe('Passkey API Routes', () => {
     });
 
     describe('POST /api/vault/passkey/register-verify', () => {
+        const originalSecret = process.env.PASSKEY_ENCRYPTION_SECRET;
+
+        beforeEach(() => {
+            process.env.PASSKEY_ENCRYPTION_SECRET = 'test-secret-for-unit-tests-only-32b';
+        });
+
+        afterEach(() => {
+            if (originalSecret === undefined) {
+                delete process.env.PASSKEY_ENCRYPTION_SECRET;
+            } else {
+                process.env.PASSKEY_ENCRYPTION_SECRET = originalSecret;
+            }
+        });
+
         it('should reject non-POST methods', async () => {
             const { default: handler } = await import('../pages/api/vault/passkey/register-verify');
             const mockReq = { method: 'GET' };
@@ -423,9 +443,56 @@ describe('Passkey API Routes', () => {
             await handler(mockReq, mockRes);
             expect(mockRes.status).toHaveBeenCalledWith(400);
         });
+
+        it('should reject a passphrase that does not match the vault', async () => {
+            (unlockVaultWithPassphrase as any).mockResolvedValueOnce({ success: false, error: 'Invalid passphrase or corrupted master key' });
+            const { default: handler } = await import('../pages/api/vault/passkey/register-verify');
+            VaultStore.setKey(Buffer.alloc(32, 1));
+            const mockReq = {
+                method: 'POST',
+                headers: { host: 'localhost' },
+                body: { registrationResponse: { id: 'cred-id', response: { transports: [] } }, passphrase: 'wrong-passphrase' }
+            };
+            await handler(mockReq, mockRes);
+            expect(unlockVaultWithPassphrase).toHaveBeenCalledWith('wrong-passphrase');
+            expect(mockRes.status).toHaveBeenCalledWith(401);
+            expect(mockRes.json).toHaveBeenCalledWith(
+                expect.objectContaining({ error: expect.stringContaining('does not match') })
+            );
+        });
+
+        it('should return 500 when PASSKEY_ENCRYPTION_SECRET is not set', async () => {
+            delete process.env.PASSKEY_ENCRYPTION_SECRET;
+            const { default: handler } = await import('../pages/api/vault/passkey/register-verify');
+            VaultStore.setKey(Buffer.alloc(32, 1));
+            mockClient.query.mockResolvedValueOnce({
+                rows: [{ value: JSON.stringify('some-challenge') }]
+            });
+            const mockReq = {
+                method: 'POST',
+                headers: { host: 'localhost' },
+                body: { registrationResponse: { id: 'cred-id', response: { transports: [] } }, passphrase: 'test-passphrase' }
+            };
+            await handler(mockReq, mockRes);
+            expect(mockRes.status).toHaveBeenCalledWith(500);
+        });
     });
 
     describe('POST /api/vault/passkey/login-verify', () => {
+        const originalSecret = process.env.PASSKEY_ENCRYPTION_SECRET;
+
+        beforeEach(() => {
+            process.env.PASSKEY_ENCRYPTION_SECRET = 'test-secret-for-unit-tests-only-32b';
+        });
+
+        afterEach(() => {
+            if (originalSecret === undefined) {
+                delete process.env.PASSKEY_ENCRYPTION_SECRET;
+            } else {
+                process.env.PASSKEY_ENCRYPTION_SECRET = originalSecret;
+            }
+        });
+
         it('should reject non-POST methods', async () => {
             const { default: handler } = await import('../pages/api/vault/passkey/login-verify');
             const mockReq = { method: 'GET' };
@@ -439,6 +506,21 @@ describe('Passkey API Routes', () => {
             const mockReq = { method: 'POST', body: {} };
             await handler(mockReq, mockRes);
             expect(mockRes.status).toHaveBeenCalledWith(400);
+        });
+
+        it('should return 500 when PASSKEY_ENCRYPTION_SECRET is not set', async () => {
+            delete process.env.PASSKEY_ENCRYPTION_SECRET;
+            const { default: handler } = await import('../pages/api/vault/passkey/login-verify');
+            mockClient.query
+                .mockResolvedValueOnce({ rows: [{ value: JSON.stringify('some-challenge') }] })
+                .mockResolvedValueOnce({ rows: [{ credential_id: 'cred-id', public_key: Buffer.alloc(32), counter: 0, encrypted_passphrase: 'iv:data:tag' }] });
+            const mockReq = {
+                method: 'POST',
+                headers: { host: 'localhost' },
+                body: { authenticationResponse: { id: 'cred-id' } }
+            };
+            await handler(mockReq, mockRes);
+            expect(mockRes.status).toHaveBeenCalledWith(500);
         });
     });
 });

@@ -3,13 +3,17 @@ import { getDB } from '../../db';
 import crypto from 'crypto';
 import logger from '../../../../utils/logger.js';
 import VaultStore from '../../utils/VaultStore';
+import { unlockVaultWithPassphrase } from '../../../../utils/vault-utils';
 
 import { getRpID, getOrigin } from './utils';
 
-const PASSKEY_ENCRYPTION_SECRET = process.env.PASSKEY_ENCRYPTION_SECRET || 'nudlers-passkey-default-secret-change-it';
+const PASSKEY_ENCRYPTION_SECRET = process.env.PASSKEY_ENCRYPTION_SECRET;
 const PASSKEY_SCRYPT_SALT = 'nudlers-passkey-scrypt-salt';
 
 function encryptPassphrase(passphrase) {
+    if (!PASSKEY_ENCRYPTION_SECRET) {
+        throw new Error('PASSKEY_ENCRYPTION_SECRET environment variable is not set. Passkey operations are disabled.');
+    }
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', crypto.scryptSync(PASSKEY_ENCRYPTION_SECRET, PASSKEY_SCRYPT_SALT, 32), iv);
     let encrypted = cipher.update(passphrase, 'utf8', 'hex');
@@ -32,6 +36,14 @@ export default async function handler(req, res) {
 
     if (!registrationResponse || !passphrase) {
         return res.status(400).json({ error: 'Missing required fields: registrationResponse and passphrase' });
+    }
+
+    // Verify the supplied passphrase is correct for this vault before storing it.
+    // This prevents an attacker from registering a passkey tied to a passphrase
+    // of their choosing while the vault happens to be unlocked.
+    const passphraseCheck = await unlockVaultWithPassphrase(passphrase);
+    if (!passphraseCheck.success) {
+        return res.status(401).json({ error: 'Passphrase does not match the current vault' });
     }
 
     let db;

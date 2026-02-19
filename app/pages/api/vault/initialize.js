@@ -29,8 +29,8 @@ export default async function handler(req, res) {
         // 2. Generate new master key
         const masterKey = crypto.randomBytes(32);
 
-        // 3. Wrap it
-        const salt = 'nudlers-vault-salt';
+        // 3. Generate a unique random salt and wrap the master key
+        const salt = crypto.randomBytes(32);
         const wrappingKey = crypto.scryptSync(passphrase, salt, 32);
         const iv = crypto.randomBytes(12);
         const cipher = crypto.createCipheriv('aes-256-gcm', wrappingKey, iv);
@@ -40,7 +40,13 @@ export default async function handler(req, res) {
 
         const wrappedStr = `${iv.toString('hex')}:${wrapped.toString('hex')}:${authTag.toString('hex')}`;
 
-        // 4. Save to DB (UPSERT)
+        // 4. Save salt and wrapped key to DB atomically
+        await client.query(
+            `INSERT INTO app_settings (key, value, description)
+             VALUES ('vault_salt', $1, 'Random salt for vault key derivation (scrypt)')
+             ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [salt.toString('hex')]
+        );
         await client.query(
             `INSERT INTO app_settings (key, value, description)
              VALUES ('wrapped_master_key', $1, 'The master key wrapped with a passphrase for memory-locked credentials')

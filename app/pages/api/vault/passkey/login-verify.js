@@ -6,10 +6,13 @@ import logger from '../../../../utils/logger.js';
 
 import { getRpID, getOrigin } from './utils';
 
-const PASSKEY_ENCRYPTION_SECRET = process.env.PASSKEY_ENCRYPTION_SECRET || 'nudlers-passkey-default-secret-change-it';
+const PASSKEY_ENCRYPTION_SECRET = process.env.PASSKEY_ENCRYPTION_SECRET;
 const PASSKEY_SCRYPT_SALT = 'nudlers-passkey-scrypt-salt';
 
 function decryptPassphrase(encryptedData) {
+    if (!PASSKEY_ENCRYPTION_SECRET) {
+        throw new Error('PASSKEY_ENCRYPTION_SECRET environment variable is not set. Passkey operations are disabled.');
+    }
     const [ivHex, encrypted, tagHex] = encryptedData.split(':');
     const iv = Buffer.from(ivHex, 'hex');
     const tag = Buffer.from(tagHex, 'hex');

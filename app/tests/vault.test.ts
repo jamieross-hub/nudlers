@@ -6,7 +6,8 @@ import { encrypt, decrypt, VaultLockedError } from '../pages/api/utils/encryptio
 describe('Vault Mechanism', () => {
     const MASTER_KEY = crypto.randomBytes(32);
     const PASSPHRASE = 'correct-passphrase';
-    const SALT = 'nudlers-vault-salt';
+    // Each test generates its own random salt — no hardcoded constant here.
+    const SALT = crypto.randomBytes(32);
 
     beforeEach(() => {
         VaultStore.clear();
@@ -44,7 +45,7 @@ describe('Vault Mechanism', () => {
 
 
     it('should simulate the full wrap/unwrap flow', () => {
-        // 1. Wrap (simulate what a setup script would do)
+        // 1. Wrap (simulate what initialize does — random salt stored in DB)
         const wrappingKey = crypto.scryptSync(PASSPHRASE, SALT, 32);
         const iv = crypto.randomBytes(12);
         const cipher = crypto.createCipheriv('aes-256-gcm', wrappingKey, iv);
@@ -54,7 +55,7 @@ describe('Vault Mechanism', () => {
 
         const wrappedMasterKeyStr = `${iv.toString('hex')}:${wrapped.toString('hex')}:${authTag.toString('hex')}`;
 
-        // 2. Unwrap (simulate /api/vault/unlock)
+        // 2. Unwrap (simulate /api/vault/unlock — salt read from DB)
         const derivedWrappingKey = crypto.scryptSync(PASSPHRASE, SALT, 32);
         const [ivHex, encData, tagHex] = wrappedMasterKeyStr.split(':');
         const decipher = crypto.createDecipheriv('aes-256-gcm', derivedWrappingKey, Buffer.from(ivHex, 'hex'));
@@ -72,8 +73,8 @@ describe('Vault Mechanism', () => {
     describe('Change Passphrase (re-wrap)', () => {
         const NEW_PASSPHRASE = 'new-strong-passphrase';
 
-        function wrapKey(masterKey: Buffer, passphrase: string): string {
-            const wrappingKey = crypto.scryptSync(passphrase, SALT, 32);
+        function wrapKey(masterKey: Buffer, passphrase: string, salt: Buffer): string {
+            const wrappingKey = crypto.scryptSync(passphrase, salt, 32);
             const iv = crypto.randomBytes(12);
             const cipher = crypto.createCipheriv('aes-256-gcm', wrappingKey, iv);
             const wrapped = Buffer.concat([cipher.update(masterKey), cipher.final()]);
@@ -82,8 +83,8 @@ describe('Vault Mechanism', () => {
             return `${iv.toString('hex')}:${wrapped.toString('hex')}:${authTag.toString('hex')}`;
         }
 
-        function unwrapKey(wrappedStr: string, passphrase: string): Buffer {
-            const wrappingKey = crypto.scryptSync(passphrase, SALT, 32);
+        function unwrapKey(wrappedStr: string, passphrase: string, salt: Buffer): Buffer {
+            const wrappingKey = crypto.scryptSync(passphrase, salt, 32);
             const [ivHex, encData, tagHex] = wrappedStr.split(':');
             const decipher = crypto.createDecipheriv('aes-256-gcm', wrappingKey, Buffer.from(ivHex, 'hex'));
             decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
@@ -94,45 +95,52 @@ describe('Vault Mechanism', () => {
         }
 
         it('should re-wrap master key with new passphrase', () => {
+            const salt1 = crypto.randomBytes(32);
+            const salt2 = crypto.randomBytes(32);
+
             // 1. Wrap with old passphrase
-            const wrappedOld = wrapKey(MASTER_KEY, PASSPHRASE);
+            const wrappedOld = wrapKey(MASTER_KEY, PASSPHRASE, salt1);
 
             // 2. Unwrap with old passphrase
-            const masterKey = unwrapKey(wrappedOld, PASSPHRASE);
+            const masterKey = unwrapKey(wrappedOld, PASSPHRASE, salt1);
             expect(masterKey).toEqual(MASTER_KEY);
 
-            // 3. Re-wrap with new passphrase
-            const wrappedNew = wrapKey(masterKey, NEW_PASSPHRASE);
+            // 3. Re-wrap with new passphrase and new salt
+            const wrappedNew = wrapKey(masterKey, NEW_PASSPHRASE, salt2);
 
-            // 4. Verify new passphrase can unwrap
-            const unwrappedNew = unwrapKey(wrappedNew, NEW_PASSPHRASE);
+            // 4. Verify new passphrase + new salt can unwrap
+            const unwrappedNew = unwrapKey(wrappedNew, NEW_PASSPHRASE, salt2);
             expect(unwrappedNew).toEqual(MASTER_KEY);
 
             // 5. Verify old passphrase fails on new wrap
-            expect(() => unwrapKey(wrappedNew, PASSPHRASE)).toThrow();
+            expect(() => unwrapKey(wrappedNew, PASSPHRASE, salt2)).toThrow();
         });
 
         it('should preserve encrypt/decrypt after re-wrap', () => {
+            const salt1 = crypto.randomBytes(32);
+            const salt2 = crypto.randomBytes(32);
+
             // 1. Wrap, encrypt data, then re-wrap
-            const wrappedOld = wrapKey(MASTER_KEY, PASSPHRASE);
-            VaultStore.setKey(unwrapKey(wrappedOld, PASSPHRASE));
+            const wrappedOld = wrapKey(MASTER_KEY, PASSPHRASE, salt1);
+            VaultStore.setKey(unwrapKey(wrappedOld, PASSPHRASE, salt1));
             const encrypted = encrypt('sensitive data');
 
             // 2. Re-wrap (simulate passphrase change)
-            const masterKey = unwrapKey(wrappedOld, PASSPHRASE);
-            const wrappedNew = wrapKey(masterKey, NEW_PASSPHRASE);
+            const masterKey = unwrapKey(wrappedOld, PASSPHRASE, salt1);
+            const wrappedNew = wrapKey(masterKey, NEW_PASSPHRASE, salt2);
 
             // 3. Unlock with new passphrase
             VaultStore.clear();
-            VaultStore.setKey(unwrapKey(wrappedNew, NEW_PASSPHRASE));
+            VaultStore.setKey(unwrapKey(wrappedNew, NEW_PASSPHRASE, salt2));
 
             // 4. Data encrypted before re-wrap is still decryptable (same master key)
             expect(decrypt(encrypted)).toBe('sensitive data');
         });
 
         it('should reject wrong current passphrase', () => {
-            const wrappedOld = wrapKey(MASTER_KEY, PASSPHRASE);
-            expect(() => unwrapKey(wrappedOld, 'wrong-passphrase')).toThrow();
+            const salt = crypto.randomBytes(32);
+            const wrappedOld = wrapKey(MASTER_KEY, PASSPHRASE, salt);
+            expect(() => unwrapKey(wrappedOld, 'wrong-passphrase', salt)).toThrow();
         });
     });
 });
