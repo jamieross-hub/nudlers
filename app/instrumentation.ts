@@ -318,8 +318,19 @@ export async function register() {
       const client = await getDB();
       try {
         const result = await client.query("SELECT value FROM app_settings WHERE key = 'wrapped_master_key'");
-        const dbKey = result.rows[0]?.value;
-        if (dbKey && dbKey.length > 0) {
+        const dbKey = result.rows[0]?.value ?? '';
+        // Treat empty string and JSON-encoded empty string as "not initialized",
+        // matching the same logic used in initialize.js and status.js.
+        let isInitialized = false;
+        if (dbKey.length > 0) {
+          try {
+            const parsed = JSON.parse(dbKey);
+            isInitialized = typeof parsed === 'string' && parsed.length > 0;
+          } catch {
+            isInitialized = true;
+          }
+        }
+        if (isInitialized) {
           const VaultStore = (await import('./pages/api/utils/VaultStore')).default;
           VaultStore.setInitialized(true);
           logger.info('[startup] Vault is initialized');

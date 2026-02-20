@@ -34,7 +34,8 @@ export async function unlockVaultWithPassphrase(passphrase) {
                 const raw = row.value;
                 try { wrappedKey = JSON.parse(raw); } catch { wrappedKey = raw; }
             } else if (row.key === 'vault_salt') {
-                storedSaltHex = row.value;
+                // vault_salt is stored as JSON.stringify(hexString) — parse it back.
+                try { storedSaltHex = JSON.parse(row.value); } catch { storedSaltHex = row.value; }
             }
         }
     } catch (err) {
@@ -51,8 +52,9 @@ export async function unlockVaultWithPassphrase(passphrase) {
     const isLegacy = !storedSaltHex;
     const salt = isLegacy ? Buffer.from(LEGACY_SALT) : Buffer.from(storedSaltHex, 'hex');
 
+    let wrappingKey;
     try {
-        const wrappingKey = crypto.scryptSync(passphrase, salt, 32);
+        wrappingKey = crypto.scryptSync(passphrase, salt, 32);
 
         const [ivHex, encryptedData, authTagHex] = wrappedKey.split(':');
         if (!ivHex || !encryptedData || !authTagHex) {
@@ -68,7 +70,7 @@ export async function unlockVaultWithPassphrase(passphrase) {
         decryptedMasterKey = Buffer.concat([decryptedMasterKey, decipher.final()]);
 
         VaultStore.setKey(decryptedMasterKey);
-        wrappingKey.fill(0);
+        // decryptedMasterKey is intentionally not zeroed: VaultStore now owns the buffer.
 
         if (isLegacy) {
             // Transparently upgrade: re-wrap with a new random salt and persist it.
@@ -81,6 +83,8 @@ export async function unlockVaultWithPassphrase(passphrase) {
     } catch (err) {
         logger.error({ error: err.message }, "Failed to unlock vault");
         return { success: false, error: 'Invalid passphrase or corrupted master key' };
+    } finally {
+        if (wrappingKey) wrappingKey.fill(0);
     }
 }
 

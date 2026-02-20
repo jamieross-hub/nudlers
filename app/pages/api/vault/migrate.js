@@ -8,7 +8,8 @@ const ENCRYPTED_FIELDS = ['username', 'password', 'id_number', 'card6_digits'];
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
-        return res.status(405).end();
+        res.setHeader('Allow', ['POST']);
+        return res.status(405).json({ error: `Method ${req.method} not allowed` });
     }
 
     const { passphrase } = req.body;
@@ -27,8 +28,17 @@ export default async function handler(req, res) {
     try {
         // 2. Check vault isn't already initialized
         const checkResult = await client.query("SELECT value FROM app_settings WHERE key = 'wrapped_master_key'");
-        const existingValue = checkResult.rows[0]?.value;
-        if (existingValue && existingValue.length > 0) {
+        const existingValue = checkResult.rows[0]?.value ?? '';
+        let isInitialized = false;
+        if (existingValue.length > 0) {
+            try {
+                const parsed = JSON.parse(existingValue);
+                isInitialized = typeof parsed === 'string' && parsed.length > 0;
+            } catch {
+                isInitialized = true;
+            }
+        }
+        if (isInitialized) {
             client.release();
             return res.status(400).json({ error: 'Vault is already initialized. Migration is not needed.' });
         }
@@ -36,8 +46,8 @@ export default async function handler(req, res) {
         // 3. Generate new master key
         const masterKey = crypto.randomBytes(32);
 
-        // 4. Wrap the new master key with the passphrase
-        const salt = 'nudlers-vault-salt';
+        // 4. Wrap the new master key with a fresh random salt (not the legacy hardcoded salt)
+        const salt = crypto.randomBytes(32);
         const wrappingKey = crypto.scryptSync(passphrase, salt, 32);
         const iv = crypto.randomBytes(12);
         const cipher = crypto.createCipheriv('aes-256-gcm', wrappingKey, iv);
@@ -49,7 +59,7 @@ export default async function handler(req, res) {
         const credsResult = await client.query('SELECT id, username, password, id_number, card6_digits FROM vendor_credentials');
         const rows = credsResult.rows;
 
-        // 6. Re-encrypt in a single transaction
+        // 6. Re-encrypt in a single transaction — also persist the random salt
         await client.query('BEGIN');
 
         let migratedCount = 0;
@@ -91,9 +101,15 @@ export default async function handler(req, res) {
             }
         }
 
-        // 7. Store wrapped master key (UPSERT)
+        // 7. Store vault_salt and wrapped master key (UPSERT)
         await client.query(
-            `INSERT INTO app_settings (key, value, description) 
+            `INSERT INTO app_settings (key, value, description)
+             VALUES ('vault_salt', $1, 'Random salt for vault key derivation (scrypt)')
+             ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [JSON.stringify(salt.toString('hex'))]
+        );
+        await client.query(
+            `INSERT INTO app_settings (key, value, description)
              VALUES ('wrapped_master_key', $1, 'The master key wrapped with a passphrase for memory-locked credentials')
              ON CONFLICT (key) DO UPDATE SET value = $1`,
             [JSON.stringify(wrappedStr)]
@@ -101,10 +117,9 @@ export default async function handler(req, res) {
 
         await client.query('COMMIT');
 
-        // 8. Set new key in VaultStore (auto-unlock)
+        // 8. Set new key in VaultStore (auto-unlock) and wipe wrapping key
         VaultStore.setKey(masterKey);
-
-        // 9. Wipe temporary wrapping key
+        // masterKey is intentionally not zeroed: VaultStore now owns the buffer.
         wrappingKey.fill(0);
 
         logger.info({ migratedCount, totalCredentials: rows.length }, 'Vault migration completed successfully');

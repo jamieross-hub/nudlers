@@ -55,7 +55,13 @@ export default async function handler(req, res) {
         if (challengeResult.rows.length === 0) {
             return res.status(400).json({ error: 'Registration challenge not found or expired' });
         }
-        const expectedChallenge = challengeResult.rows[0].value;
+        // challenge is stored as JSON.stringify(string) — parse it back.
+        let expectedChallenge;
+        try {
+            expectedChallenge = JSON.parse(challengeResult.rows[0].value);
+        } catch {
+            expectedChallenge = challengeResult.rows[0].value;
+        }
 
         // 2. Verify registration response
         const verification = await verifyRegistrationResponse({
@@ -76,6 +82,11 @@ export default async function handler(req, res) {
         // 3. Encrypt the passphrase
         const encryptedPassphrase = encryptPassphrase(passphrase);
 
+        // Validate transports before use
+        const transports = Array.isArray(registrationResponse?.response?.transports)
+            ? registrationResponse.response.transports
+            : [];
+
         // 4. Store the credential and cleanup challenge in a transaction
         await db.query('BEGIN');
         try {
@@ -86,7 +97,7 @@ export default async function handler(req, res) {
                 registrationResponse.id,
                 Buffer.from(credentialPublicKey),
                 counter,
-                JSON.stringify(registrationResponse.response.transports || []),
+                JSON.stringify(transports),
                 encryptedPassphrase
             ]);
 

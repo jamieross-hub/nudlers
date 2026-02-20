@@ -16,6 +16,7 @@ function unwrapMasterKey(wrappedKeyStr, passphrase, salt) {
 
     const [ivHex, encryptedData, authTagHex] = wrappedKeyStr.split(':');
     if (!ivHex || !encryptedData || !authTagHex) {
+        wrappingKey.fill(0);
         throw new Error('Invalid wrapped key format');
     }
 
@@ -24,10 +25,13 @@ function unwrapMasterKey(wrappedKeyStr, passphrase, salt) {
     const decipher = crypto.createDecipheriv('aes-256-gcm', wrappingKey, iv);
     decipher.setAuthTag(authTag);
 
-    let decrypted = decipher.update(encryptedData, 'hex');
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-
-    wrappingKey.fill(0);
+    let decrypted;
+    try {
+        decrypted = decipher.update(encryptedData, 'hex');
+        decrypted = Buffer.concat([decrypted, decipher.final()]);
+    } finally {
+        wrappingKey.fill(0);
+    }
     return decrypted;
 }
 
@@ -86,7 +90,10 @@ export default async function handler(req, res) {
         let dbKey, storedSaltHex;
         for (const row of result.rows) {
             if (row.key === 'wrapped_master_key') dbKey = row.value;
-            else if (row.key === 'vault_salt') storedSaltHex = row.value;
+            else if (row.key === 'vault_salt') {
+                // vault_salt is stored as JSON.stringify(hexString) — parse it back.
+                try { storedSaltHex = JSON.parse(row.value); } catch { storedSaltHex = row.value; }
+            }
         }
 
         if (!dbKey) {
@@ -117,29 +124,38 @@ export default async function handler(req, res) {
         const { wrappedStr: newWrappedStr, saltHex: newSaltHex } = wrapMasterKey(masterKey, newPassphrase);
         masterKey.fill(0);
 
-        // 4. Save new salt and wrapped key to DB
-        await client.query(
-            `INSERT INTO app_settings (key, value, description)
-             VALUES ('vault_salt', $1, 'Random salt for vault key derivation (scrypt)')
-             ON CONFLICT (key) DO UPDATE SET value = $1`,
-            [JSON.stringify(newSaltHex)]
-        );
-        await client.query(
-            "UPDATE app_settings SET value = $1 WHERE key = 'wrapped_master_key'",
-            [JSON.stringify(newWrappedStr)]
-        );
+        // 4. Save new salt and wrapped key atomically — a crash between the two writes
+        //    would leave an inconsistent vault, so wrap both in a transaction.
+        await client.query('BEGIN');
+        try {
+            await client.query(
+                `INSERT INTO app_settings (key, value, description)
+                 VALUES ('vault_salt', $1, 'Random salt for vault key derivation (scrypt)')
+                 ON CONFLICT (key) DO UPDATE SET value = $1`,
+                [JSON.stringify(newSaltHex)]
+            );
+            await client.query(
+                "UPDATE app_settings SET value = $1 WHERE key = 'wrapped_master_key'",
+                [JSON.stringify(newWrappedStr)]
+            );
 
-        // 5. Delete all passkeys (they store encrypted copies of the old passphrase)
-        const passkeysResult = await client.query('DELETE FROM vault_passkeys');
-        const passkeysCleared = passkeysResult.rowCount || 0;
+            // 5. Delete all passkeys (they store encrypted copies of the old passphrase)
+            const passkeysResult = await client.query('DELETE FROM vault_passkeys');
+            const passkeysCleared = passkeysResult.rowCount || 0;
 
-        logger.info({ passkeysCleared }, 'Passphrase changed successfully, passkeys invalidated');
+            await client.query('COMMIT');
 
-        res.status(200).json({
-            success: true,
-            message: 'Passphrase changed successfully',
-            passkeysCleared
-        });
+            logger.info({ passkeysCleared }, 'Passphrase changed successfully, passkeys invalidated');
+
+            res.status(200).json({
+                success: true,
+                message: 'Passphrase changed successfully',
+                passkeysCleared
+            });
+        } catch (txErr) {
+            await client.query('ROLLBACK').catch(() => { });
+            throw txErr;
+        }
     } catch (err) {
         logger.error({ error: err.message }, 'Failed to change passphrase');
         res.status(500).json({ error: 'Failed to change passphrase' });

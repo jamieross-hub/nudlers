@@ -75,9 +75,14 @@ describe('Vault API Routes', () => {
         });
 
         it('should reject if vault already initialized', async () => {
+            // Query 1: BEGIN
+            mockClient.query.mockResolvedValueOnce({});
+            // Query 2: check returns existing key
             mockClient.query.mockResolvedValueOnce({
                 rows: [{ value: '"some-wrapped-key"' }]
             });
+            // Query 3: ROLLBACK (called when already initialized)
+            mockClient.query.mockResolvedValueOnce({});
             mockReq = { method: 'POST', body: { passphrase: 'test-passphrase-long' } };
             await initializeHandler(mockReq, mockRes);
             expect(mockRes.status).toHaveBeenCalledWith(400);
@@ -87,9 +92,15 @@ describe('Vault API Routes', () => {
         });
 
         it('should initialize vault successfully', async () => {
-            // First query: check if already initialized (empty)
+            // Query 1: BEGIN
+            mockClient.query.mockResolvedValueOnce({});
+            // Query 2: check if already initialized (empty)
             mockClient.query.mockResolvedValueOnce({ rows: [{ value: '' }] });
-            // Second query: INSERT wrapped key
+            // Query 3: INSERT vault_salt
+            mockClient.query.mockResolvedValueOnce({});
+            // Query 4: INSERT wrapped_master_key
+            mockClient.query.mockResolvedValueOnce({});
+            // Query 5: COMMIT
             mockClient.query.mockResolvedValueOnce({});
 
             mockReq = { method: 'POST', body: { passphrase: 'test-passphrase-long' } };
@@ -103,7 +114,10 @@ describe('Vault API Routes', () => {
         });
 
         it('should release database client on success', async () => {
+            mockClient.query.mockResolvedValueOnce({});
             mockClient.query.mockResolvedValueOnce({ rows: [{ value: '' }] });
+            mockClient.query.mockResolvedValueOnce({});
+            mockClient.query.mockResolvedValueOnce({});
             mockClient.query.mockResolvedValueOnce({});
 
             mockReq = { method: 'POST', body: { passphrase: 'test-passphrase-long' } };

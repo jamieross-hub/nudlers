@@ -3,11 +3,15 @@ import { getDB } from '../../db';
 import crypto from 'crypto';
 import { unlockVaultWithPassphrase } from '../../../../utils/vault-utils';
 import logger from '../../../../utils/logger.js';
+import { rateLimit } from '../../utils/rateLimit.js';
 
 import { getRpID, getOrigin } from './utils';
 
 const PASSKEY_ENCRYPTION_SECRET = process.env.PASSKEY_ENCRYPTION_SECRET;
 const PASSKEY_SCRYPT_SALT = 'nudlers-passkey-scrypt-salt';
+
+// Rate limit: 10 attempts per 15 minutes per IP to prevent brute-force.
+const loginVerifyLimiter = rateLimit({ keyPrefix: 'passkey-login-verify', limit: 10, windowMs: 15 * 60 * 1000 });
 
 function decryptPassphrase(encryptedData) {
     if (!PASSKEY_ENCRYPTION_SECRET) {
@@ -29,6 +33,12 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: `Method ${req.method} not allowed` });
     }
 
+    // Rate limiting
+    const limitResult = loginVerifyLimiter(req, res);
+    if (!limitResult.ok) {
+        return res.status(429).json({ error: limitResult.error });
+    }
+
     const { authenticationResponse } = req.body;
 
     if (!authenticationResponse) {
@@ -39,15 +49,37 @@ export default async function handler(req, res) {
     try {
         db = await getDB();
 
-        // 1. Get the challenge
-        const challengeResult = await db.query("SELECT value FROM app_settings WHERE key = 'passkey_authentication_challenge'");
-        if (challengeResult.rows.length === 0) {
-            return res.status(400).json({ error: 'Authentication challenge not found or expired' });
+        // 1. Read and immediately consume the challenge atomically.
+        //    Deleting before verification prevents replay attacks: if verification
+        //    fails, the challenge is already gone so it cannot be retried.
+        await db.query('BEGIN');
+        let expectedChallenge;
+        try {
+            const challengeResult = await db.query(
+                "SELECT value FROM app_settings WHERE key = 'passkey_authentication_challenge'"
+            );
+            if (challengeResult.rows.length === 0) {
+                await db.query('ROLLBACK');
+                return res.status(400).json({ error: 'Authentication challenge not found or expired' });
+            }
+            // challenge is stored as JSON.stringify(string) — parse it back.
+            try {
+                expectedChallenge = JSON.parse(challengeResult.rows[0].value);
+            } catch {
+                expectedChallenge = challengeResult.rows[0].value;
+            }
+            await db.query("DELETE FROM app_settings WHERE key = 'passkey_authentication_challenge'");
+            await db.query('COMMIT');
+        } catch (txErr) {
+            await db.query('ROLLBACK').catch(() => { });
+            throw txErr;
         }
-        const expectedChallenge = challengeResult.rows[0].value;
 
-        // 2. Get the credential from DB
-        const credentialResult = await db.query("SELECT * FROM vault_passkeys WHERE credential_id = $1", [authenticationResponse.id]);
+        // 2. Get the credential from DB (explicit columns to avoid accidental exposure)
+        const credentialResult = await db.query(
+            "SELECT id, credential_id, public_key, counter, transports, encrypted_passphrase FROM vault_passkeys WHERE credential_id = $1",
+            [authenticationResponse.id]
+        );
         if (credentialResult.rows.length === 0) {
             return res.status(404).json({ error: 'Credential not found' });
         }
@@ -76,20 +108,16 @@ export default async function handler(req, res) {
         // Update counter
         await db.query("UPDATE vault_passkeys SET counter = $1 WHERE credential_id = $2", [newCounter, dbCredential.credential_id]);
 
-        // 4. Decrypt passphrase
+        // 4. Decrypt passphrase and unlock vault
         const passphrase = decryptPassphrase(dbCredential.encrypted_passphrase);
-
-        // 5. Unlock vault
         const unlockResult = await unlockVaultWithPassphrase(passphrase);
-
-        // Cleanup challenge
-        await db.query("DELETE FROM app_settings WHERE key = 'passkey_authentication_challenge'");
 
         if (unlockResult.success) {
             logger.info('Vault unlocked via passkey');
             return res.status(200).json({ success: true, message: 'Vault unlocked via passkey' });
         } else {
-            return res.status(401).json({ error: unlockResult.error });
+            logger.error({ error: unlockResult.error }, 'Vault unlock failed after passkey verification');
+            return res.status(500).json({ error: 'Passkey verified but vault unlock failed' });
         }
     } catch (error) {
         logger.error({ error: error.message }, 'Passkey authentication verification failed');
