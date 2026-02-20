@@ -122,7 +122,7 @@ export default async function handler(req, res) {
             `INSERT INTO app_settings (key, value, description)
              VALUES ('vault_salt', $1, 'Random salt for vault key derivation (scrypt)')
              ON CONFLICT (key) DO UPDATE SET value = $1`,
-            [newSaltHex]
+            [JSON.stringify(newSaltHex)]
         );
         await client.query(
             "UPDATE app_settings SET value = $1 WHERE key = 'wrapped_master_key'",
