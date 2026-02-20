@@ -194,9 +194,9 @@ Nudlers uses a **Memory-Locked Vault** for all credential encryption. Your maste
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `PASSKEY_ENCRYPTION_SECRET` | | Server-side secret for encrypting passkey data. Auto-generated default used if not set. |
-| `WEBAUTHN_RP_ID` | | WebAuthn Relying Party ID. Defaults to `localhost`. Set to your domain in production. |
-| `WEBAUTHN_ORIGIN` | | WebAuthn expected origin. Defaults to `http://localhost:6969`. Set to your app URL in production. |
+| `PASSKEY_ENCRYPTION_SECRET` | Production | **Required if using passkeys in production.** A stable secret used to encrypt the vault passphrase stored in the database. Generate with `openssl rand -base64 32`. **Must never change** — rotating it invalidates all registered passkeys. |
+| `WEBAUTHN_RP_ID` | Production | WebAuthn Relying Party ID. Defaults to `localhost`. **Must be set to your domain** (e.g. `nudlers.example.com`) when running behind a reverse proxy or over HTTPS. |
+| `WEBAUTHN_ORIGIN` | Production | WebAuthn expected origin. Defaults to `http://localhost:6969`. **Must be set to your full app URL** (e.g. `https://nudlers.example.com`) when running behind a reverse proxy or over HTTPS. Without this, passkey registration/login will fail with an origin mismatch error. |
 
 ### 🍓 Runs Anywhere
 
