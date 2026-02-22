@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Box, Typography, TextField, Button, Dialog, DialogContent, InputAdornment, IconButton, CircularProgress, Alert } from '@mui/material';
+import { Box, Typography, TextField, Button, Dialog, DialogContent, InputAdornment, IconButton, CircularProgress, Alert, Collapse } from '@mui/material';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import FingerprintIcon from '@mui/icons-material/Fingerprint';
 import KeyIcon from '@mui/icons-material/Key';
 import CloseIcon from '@mui/icons-material/Close';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { styled } from '@mui/material/styles';
 import { useStatus } from '../context/StatusContext';
 
@@ -49,6 +51,7 @@ const VaultLockScreen: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showPasskeySetup, setShowPasskeySetup] = useState(false);
+    const [showSecurityDetails, setShowSecurityDetails] = useState(false);
 
     // Determine mode: migrate > init > unlock
     const isMigrate = needsMigration;
@@ -357,10 +360,10 @@ const VaultLockScreen: React.FC = () => {
 
                             <Typography variant="body1" sx={{ color: 'var(--n-text-secondary)', mb: 4, textAlign: 'center' }}>
                                 {isMigrate
-                                    ? 'Your credentials are currently using a legacy encryption key. Create a vault passphrase to upgrade to the secure Memory-Locked Vault.'
+                                    ? 'Create a passphrase to encrypt a new master key that will re-encrypt your credentials. The passphrase is never stored — losing it makes the vault unrecoverable.'
                                     : isInit
-                                        ? 'Create a passphrase to secure your bank and credit card credentials in memory.'
-                                        : 'Credentials are encrypted and locked in memory. Enter your passphrase to continue.'}
+                                        ? 'Your passphrase encrypts a master key, which in turn encrypts your credentials. The passphrase is never stored — losing it makes the vault unrecoverable.'
+                                        : 'Your passphrase decrypts the master key into memory, which unlocks your credentials. The key is cleared on server restart.'}
                             </Typography>
 
                             {error && (
@@ -486,7 +489,44 @@ const VaultLockScreen: React.FC = () => {
                                 )}
                             </form>
 
-                            <Typography variant="body2" sx={{ color: 'var(--n-text-muted)', mt: 3, textAlign: 'center', fontSize: '0.75rem' }}>
+                            <Button
+                                variant="text"
+                                size="small"
+                                onClick={() => setShowSecurityDetails(v => !v)}
+                                endIcon={showSecurityDetails ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                sx={{
+                                    mt: 2,
+                                    color: 'var(--n-text-muted)',
+                                    textTransform: 'none',
+                                    fontSize: '0.75rem',
+                                    '&:hover': { color: 'var(--n-text-secondary)', backgroundColor: 'transparent' }
+                                }}
+                            >
+                                How encryption works
+                            </Button>
+
+                            <Collapse in={showSecurityDetails} sx={{ width: '100%' }}>
+                                <Box sx={{
+                                    mt: 1,
+                                    p: 2,
+                                    borderRadius: 'var(--n-radius-lg)',
+                                    backgroundColor: 'var(--n-bg-surface-alt)',
+                                    border: '1px solid var(--n-border)',
+                                }}>
+                                    <Typography variant="caption" sx={{ color: 'var(--n-text-muted)', display: 'block', fontFamily: 'monospace', lineHeight: 2, whiteSpace: 'pre' }}>
+                                        {
+`Passphrase ──scrypt──▶ Wrapping Key
+Wrapping Key ─AES-256-GCM─▶ Master Key (DB)
+Master Key ─AES-256-GCM─▶ Credentials (DB)`
+                                        }
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ color: 'var(--n-text-muted)', display: 'block', mt: 1, lineHeight: 1.6 }}>
+                                        On unlock, the master key is decrypted into memory only — never written to disk. It is cleared when the server restarts.
+                                    </Typography>
+                                </Box>
+                            </Collapse>
+
+                            <Typography variant="body2" sx={{ color: 'var(--n-text-muted)', mt: 2, textAlign: 'center', fontSize: '0.75rem' }}>
                                 Unlocking is only required for syncing and credential management.
                                 Data viewing and navigation are fully available.
                             </Typography>
