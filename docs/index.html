@@ -467,10 +467,31 @@ npm run dev</code></pre>
                     <summary class="faq-question">How are my bank credentials stored?</summary>
                     <div class="faq-answer">
                         <p>
-                            Your credentials are stored encrypted in the database using AES-256 encryption.
-                            Nudlers uses a Memory-Locked Vault where your master key exists only in RAM
-                            while the vault is unlocked. Even if your database is compromised,
-                            your credentials remain secure.
+                            Your credentials are stored encrypted in the database using AES-256-GCM encryption.
+                            Nudlers uses a two-layer encryption model: a random master key encrypts your
+                            credentials, and that master key is itself encrypted by a key derived from your
+                            vault passphrase. Even if your database is compromised, credentials remain secure
+                            because the master key is never stored in plain form — only its encrypted version is.
+                        </p>
+                    </div>
+                </details>
+
+                <details class="faq-item">
+                    <summary class="faq-question">What does the vault passphrase protect, and is it stored anywhere?</summary>
+                    <div class="faq-answer">
+                        <p>
+                            The passphrase is <strong>never stored</strong>. Instead, it is used to derive a
+                            wrapping key (via scrypt, a memory-hard key derivation function) that encrypts the
+                            master key. The full chain looks like this:
+                        </p>
+                        <pre style="background:var(--bg-surface,#1e1e2e);border-radius:8px;padding:1rem;font-size:0.82rem;overflow-x:auto;margin:0.75rem 0;">Passphrase ──scrypt──▶ Wrapping Key
+Wrapping Key ─AES-256-GCM─▶ Master Key (stored encrypted in DB)
+Master Key ─AES-256-GCM─▶ Your credentials (stored encrypted in DB)</pre>
+                        <p>
+                            Once you unlock the vault, the master key is decrypted into server memory only —
+                            it is never written to disk. It is cleared automatically when the server restarts,
+                            requiring you to unlock again. If you forget your passphrase, the master key (and
+                            everything it protects) becomes permanently inaccessible.
                         </p>
                     </div>
                 </details>
