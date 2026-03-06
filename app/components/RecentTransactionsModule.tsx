@@ -134,8 +134,26 @@ const RecentTransactionsModule: React.FC = () => {
                             transactions={transactions}
                             groupByDate={true}
                             disableWrapper={true}
-                            hideActions={true}
+                            hideActions={false}
                             hideInstallmentsColumn={true}
+                            onUpdate={async (t, updates) => {
+                                try {
+                                    const response = await fetch(`/api/transactions/${t.identifier}|${t.vendor}`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify(updates),
+                                    });
+                                    if (response.ok) {
+                                        setTransactions(prev => prev.map(item =>
+                                            item.identifier === t.identifier && item.vendor === t.vendor
+                                                ? { ...item, ...updates }
+                                                : item
+                                        ));
+                                    }
+                                } catch (error) {
+                                    logger.error('Error updating transaction in module', error as Error);
+                                }
+                            }}
                         />
                         {loadingMore && (
                             <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>

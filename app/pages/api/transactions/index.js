@@ -68,9 +68,9 @@ const addManualTransaction = async (req, res) => {
 
         const result = await client.query(
             `INSERT INTO transactions
-             (identifier, vendor, date, name, price, category, type, processed_date, memo, status, account_number, category_source, transaction_type)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-             RETURNING identifier, vendor, date, name, price, category, memo, account_number`,
+             (identifier, vendor, date, name, price, category, type, processed_date, memo, status, account_number, category_source, transaction_type, is_favorite, notes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             RETURNING identifier, vendor, date, name, price, category, memo, account_number, is_favorite, notes`,
             [
                 identifier,
                 vendor,
@@ -84,7 +84,9 @@ const addManualTransaction = async (req, res) => {
                 'completed',
                 finalAccountNumber,
                 'manual',
-                transactionType
+                transactionType,
+                req.body.is_favorite || false,
+                req.body.notes || null
             ]
         );
 
@@ -139,7 +141,8 @@ const getTransactions = createApiHandler({
             limit = 100,
             offset = 0,
             summary,
-            availableMonths
+            availableMonths,
+            favoritesOnly
         } = req.query;
 
         if (summary === 'true') {
@@ -213,12 +216,15 @@ const getTransactions = createApiHandler({
 
         // 3. Search Clause
         if (q) {
-            conditions.push(`(t.name ILIKE $${paramIndex} OR t.vendor ILIKE $${paramIndex} OR t.category ILIKE $${paramIndex} OR t.identifier ILIKE $${paramIndex})`);
+            conditions.push(`(t.name ILIKE $${paramIndex} OR t.vendor ILIKE $${paramIndex} OR t.category ILIKE $${paramIndex} OR t.identifier ILIKE $${paramIndex} OR t.notes ILIKE $${paramIndex})`);
             params.push(`%${q}%`);
             paramIndex++;
         }
 
         // 4. Specific Filters
+        if (favoritesOnly === 'true') {
+            conditions.push(`t.is_favorite = true`);
+        }
         if (vendor) {
             conditions.push(`t.vendor = $${paramIndex}`);
             params.push(vendor);
@@ -303,6 +309,8 @@ const getTransactions = createApiHandler({
           t.category_source,
           t.rule_matched,
           t.transaction_type,
+          t.is_favorite,
+          t.notes,
           vc.nickname as vendor_nickname,
           vc.card6_digits as card6_digits_encrypted
         FROM transactions t

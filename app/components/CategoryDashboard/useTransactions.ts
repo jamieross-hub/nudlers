@@ -25,6 +25,7 @@ export function useTransactions() {
   const pageRef = React.useRef(0);
   const [hasMore, setHasMore] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
+  const [favoritesOnly, setFavoritesOnly] = React.useState(false);
   const scrollThrottleRef = React.useRef(false);
 
   const fetchTransactionsWithRange = React.useCallback(async (
@@ -57,6 +58,9 @@ export function useTransactions() {
       url.searchParams.append("sortOrder", sortOrder);
       url.searchParams.append("limit", PAGE_SIZE.toString());
       url.searchParams.append("offset", (currentPage * PAGE_SIZE).toString());
+      if (favoritesOnly) {
+        url.searchParams.append("favoritesOnly", "true");
+      }
 
       const response = await fetch(url.toString());
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -88,7 +92,7 @@ export function useTransactions() {
         setLoadingMore(false);
       }
     }
-  }, [selectedYear, selectedMonth, sortBy, sortOrder]);
+  }, [selectedYear, selectedMonth, sortBy, sortOrder, favoritesOnly]);
 
   const handleSearch = React.useCallback(async (e?: React.FormEvent, isLoadMore: boolean = false) => {
     e?.preventDefault();
@@ -124,6 +128,9 @@ export function useTransactions() {
 
       queryParams += `&sortBy=${sortBy}&sortOrder=${sortOrder}`;
       queryParams += `&limit=${PAGE_SIZE}&offset=${currentPage * PAGE_SIZE}`;
+      if (favoritesOnly) {
+        queryParams += `&favoritesOnly=true`;
+      }
 
       const response = await fetch(`/api/transactions?${queryParams}`);
       if (response.ok) {
@@ -152,7 +159,7 @@ export function useTransactions() {
     fetchTransactionsWithRange, dateRangeMode,
     customStartDate, customEndDate,
     selectedYear, selectedMonth,
-    sortBy, sortOrder, showNotification
+    sortBy, sortOrder, favoritesOnly, showNotification
   ]);
 
   const handleSort = (field: string) => {
@@ -203,7 +210,7 @@ export function useTransactions() {
         fetchTransactionsWithRange(startDate, endDate, billingCycle);
       }
     }
-  }, [startDate, endDate, billingCycle, fetchTransactionsWithRange, searchQuery, handleSearch]);
+  }, [startDate, endDate, billingCycle, fetchTransactionsWithRange, searchQuery, favoritesOnly, handleSearch]);
 
   // Stable event listener - attached once, never re-attached
   React.useEffect(() => {
@@ -233,23 +240,18 @@ export function useTransactions() {
     }
   };
 
-  const handleUpdateTransaction = async (transaction: Expense, newPrice: number, newCategory?: string) => {
+  const handleUpdateTransaction = async (transaction: Expense, updates: Partial<Expense>) => {
     try {
-      const updateData: Partial<Expense> = { price: newPrice };
-      if (newCategory !== undefined) {
-        updateData.category = newCategory;
-      }
-
       const response = await fetch(`/api/transactions/${transaction.identifier}|${transaction.vendor}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updateData),
+        body: JSON.stringify(updates),
       });
 
       if (response.ok) {
         setTransactions(prev => prev.map(t =>
           t.identifier === transaction.identifier && t.vendor === transaction.vendor
-            ? { ...t, price: newPrice, ...(newCategory !== undefined && { category: newCategory }) }
+            ? { ...t, ...updates }
             : t
         ));
       } else {
@@ -258,8 +260,10 @@ export function useTransactions() {
     } catch (error) {
       logger.error('Error updating transaction', error, {
         transactionId: transaction.identifier,
-        vendor: transaction.vendor
+        vendor: transaction.vendor,
+        updates
       });
+      showNotification('Update failed', 'error');
     }
   };
 
@@ -291,5 +295,7 @@ export function useTransactions() {
     handleDeleteTransaction,
     handleUpdateTransaction,
     handleScroll,
+    favoritesOnly,
+    setFavoritesOnly
   };
 }

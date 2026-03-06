@@ -5,6 +5,10 @@ import Box from '@mui/material/Box';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { ModalData } from './types';
 import { useCategoryColors } from './utils/categoryUtils';
 import ExpensesModal from './components/ExpensesModal';
@@ -48,6 +52,8 @@ const CategoryDashboard: React.FC = () => {
     handleDeleteTransaction,
     handleUpdateTransaction,
     handleScroll,
+    favoritesOnly,
+    setFavoritesOnly
   } = useTransactions();
 
   const handleYearChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -136,6 +142,26 @@ const CategoryDashboard: React.FC = () => {
           isSearching={isSearching}
           startDate={startDate}
           endDate={endDate}
+          actions={
+            <Tooltip title={favoritesOnly ? "Show All Transactions" : "Show Favorites Only"}>
+              <IconButton
+                onClick={() => setFavoritesOnly(!favoritesOnly)}
+                sx={{
+                  color: favoritesOnly ? '#facc15' : 'text.disabled',
+                  background: favoritesOnly ? 'rgba(250, 204, 21, 0.1)' : 'transparent',
+                  border: favoritesOnly ? '1px solid #facc15' : '1px solid transparent',
+                  borderRadius: '12px',
+                  width: 40,
+                  height: 40,
+                  '&:hover': {
+                    background: favoritesOnly ? 'rgba(250, 204, 21, 0.2)' : 'rgba(0,0,0,0.05)'
+                  }
+                }}
+              >
+                {favoritesOnly ? <StarIcon /> : <StarBorderIcon />}
+              </IconButton>
+            </Tooltip>
+          }
         />
 
         <Box
