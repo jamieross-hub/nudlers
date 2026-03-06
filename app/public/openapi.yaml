@@ -568,6 +568,12 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: favoritesOnly
+          in: query
+          description: Filter for favorited transactions only
+          schema:
+            type: boolean
+            default: false
     post:
       tags:
         - Finance
@@ -679,6 +685,12 @@ paths:
                 category:
                   type: string
                   description: Updated category
+                is_favorite:
+                  type: boolean
+                  description: Favorited status
+                notes:
+                  type: string
+                  description: User notes
       responses:
         '200':
           description: Transaction updated successfully
@@ -2859,6 +2871,12 @@ components:
           type: string
           enum: [bank, credit_card]
           description: Whether this is a bank or credit card transaction
+        is_favorite:
+          type: boolean
+          description: Favorited status
+        notes:
+          type: string
+          description: User notes
 
     Budget:
       type: object

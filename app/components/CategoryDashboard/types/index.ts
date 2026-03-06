@@ -20,6 +20,8 @@ export interface Expense {
   card6_digits?: string;
   account_number?: string;
   processed_date?: string;
+  is_favorite?: boolean;
+  notes?: string;
 }
 
 export interface ExpensesModalProps {

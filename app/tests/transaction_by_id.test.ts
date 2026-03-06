@@ -43,10 +43,13 @@ describe('Transaction by ID API', () => {
             expect(mockRes.status).toHaveBeenCalledWith(400);
         });
 
-        it('should reject PUT without price or category', async () => {
+        it('should reject PUT without any valid update fields', async () => {
             const req = { method: 'PUT', query: { id: 'abc|visaCal' }, body: {} };
             await handler(req as any, mockRes as any);
             expect(mockRes.status).toHaveBeenCalledWith(400);
+            expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+                error: expect.stringContaining('required for updates')
+            }));
         });
     });
 
@@ -150,6 +153,38 @@ describe('Transaction by ID API', () => {
             expect(sql).toContain('category');
             expect(params).toContain(50);
             expect(params).toContain('Transport');
+        });
+
+        it('should update is_favorite', async () => {
+            mockClient.query.mockResolvedValue({ rowCount: 1 });
+
+            const req = {
+                method: 'PUT',
+                query: { id: 'txn123|visaCal' },
+                body: { is_favorite: true }
+            };
+            await handler(req as any, mockRes as any);
+
+            const [sql, params] = mockClient.query.mock.calls[0];
+            expect(sql).toContain('is_favorite = $3');
+            expect(params).toContain(true);
+            expect(mockRes.status).toHaveBeenCalledWith(200);
+        });
+
+        it('should update notes', async () => {
+            mockClient.query.mockResolvedValue({ rowCount: 1 });
+
+            const req = {
+                method: 'PUT',
+                query: { id: 'txn123|visaCal' },
+                body: { notes: 'New note' }
+            };
+            await handler(req as any, mockRes as any);
+
+            const [sql, params] = mockClient.query.mock.calls[0];
+            expect(sql).toContain('notes = $3');
+            expect(params).toContain('New note');
+            expect(mockRes.status).toHaveBeenCalledWith(200);
         });
     });
 
