@@ -152,24 +152,22 @@ const MinimalBudgetRow: React.FC<{
                         )}
                     </Typography>
 
-                    {/* Edit Button */}
-                    {hasBudget && (
-                        <IconButton
-                            size="small"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onEdit();
-                            }}
-                            sx={{
-                                padding: '3px',
-                                opacity: 0.3,
-                                transition: 'all 0.2s',
-                                '&:hover': { opacity: 1, color: 'primary.main', bgcolor: 'rgba(59, 130, 246, 0.1)' }
-                            }}
-                        >
-                            <EditIcon sx={{ fontSize: '13px' }} />
-                        </IconButton>
-                    )}
+                    {/* Action Button */}
+                    <IconButton
+                        size="small"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit();
+                        }}
+                        sx={{
+                            padding: '3px',
+                            opacity: 0.3,
+                            transition: 'all 0.2s',
+                            '&:hover': { opacity: 1, color: hasBudget ? 'primary.main' : 'success.main', bgcolor: hasBudget ? 'rgba(59, 130, 246, 0.1)' : 'rgba(34, 197, 94, 0.1)' }
+                        }}
+                    >
+                        {hasBudget ? <EditIcon sx={{ fontSize: '13px' }} /> : <AddIcon sx={{ fontSize: '13px' }} />}
+                    </IconButton>
                 </Box>
             </Box>
         </Box>
@@ -432,8 +430,26 @@ const BudgetModule: React.FC<BudgetModuleProps> = ({ onViewTransactions }) => {
                         {budgetsWithSpending.length}
                     </Box>
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Tooltip title="Add New Budget">
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setNewBudgetCategory('');
+                                setNewBudgetLimit('');
+                                setEditingBudget(null);
+                                setIsAddModalOpen(true);
+                            }}
+                            sx={{
+                                color: 'primary.main',
+                                bgcolor: 'rgba(59, 130, 246, 0.05)',
+                                '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.15)' }
+                            }}
+                        >
+                            <AddIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                    </Tooltip>
                     <Box sx={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s', display: 'flex', color: 'text.secondary' }}>
                         <KeyboardArrowDownIcon />
                     </Box>
@@ -461,8 +477,34 @@ const BudgetModule: React.FC<BudgetModuleProps> = ({ onViewTransactions }) => {
                                 <CircularProgress size={20} />
                             </Box>
                         ) : budgetsWithSpending.length === 0 ? (
-                            <Box sx={{ textAlign: 'center', py: 3, px: 4, width: '100%', color: 'text.secondary', bgcolor: theme.palette.action.hover, borderRadius: '12px', border: '1px dashed ' + theme.palette.divider }}>
-                                <Typography variant="body2" fontSize="0.85rem">No budgets set. Manage budgets in the Budgets Dashboard.</Typography>
+                            <Box
+                                onClick={() => {
+                                    setNewBudgetCategory('');
+                                    setNewBudgetLimit('');
+                                    setEditingBudget(null);
+                                    setIsAddModalOpen(true);
+                                }}
+                                sx={{
+                                    textAlign: 'center',
+                                    py: 4,
+                                    px: 4,
+                                    width: '100%',
+                                    color: 'text.secondary',
+                                    bgcolor: theme.palette.action.hover,
+                                    borderRadius: '16px',
+                                    border: '1px dashed ' + theme.palette.divider,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    '&:hover': {
+                                        borderColor: 'primary.main',
+                                        color: 'primary.main',
+                                        bgcolor: 'rgba(59, 130, 246, 0.05)'
+                                    }
+                                }}
+                            >
+                                <AddIcon sx={{ mb: 1, opacity: 0.5 }} />
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>Create Your First Budget</Typography>
+                                <Typography variant="caption" sx={{ opacity: 0.7 }}>Set spending limits for categories to track your finances better.</Typography>
                             </Box>
                         ) : (
                             budgetsWithSpending.map((budget) => (
