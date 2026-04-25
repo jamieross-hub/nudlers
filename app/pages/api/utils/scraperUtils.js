@@ -775,11 +775,13 @@ export async function runScraper(client, scraperOptions, credentials, onProgress
     ? await getIsracardScrapeCategoriesSetting(client)
     : true;
 
-  // For Hapoalim: extend timeout BEFORE creating the scraper so page.setDefaultTimeout uses it
+  // For Hapoalim: extend timeout BEFORE creating the scraper so page.setDefaultTimeout uses it.
+  // OTP flow can take up to MAX_OTP_ATTEMPTS (3) × OTP_USER_TIMEOUT_MS (180s) of user wait
+  // plus per-attempt processing — give it generous headroom.
   const isHapoalim = scraperOptions.companyId === 'hapoalim';
   let effectiveTimeout = scraperOptions.timeout || DEFAULT_SCRAPER_TIMEOUT;
   if (isHapoalim) {
-    const otpExtraTimeout = 200000; // 200 seconds extra for OTP flow
+    const otpExtraTimeout = 600000; // 10 min headroom for the OTP flow (3 attempts × 3 min + slack)
     effectiveTimeout += otpExtraTimeout;
     logger.info({ originalTimeout: scraperOptions.timeout, effectiveTimeout }, '[Scraper] Extended timeout for Hapoalim OTP');
   }
@@ -871,9 +873,9 @@ export async function runScraper(client, scraperOptions, credentials, onProgress
   // Wrap the entire scrape process in a global timeout
   let globalTimeoutMs = options.timeout || DEFAULT_SCRAPER_TIMEOUT;
 
-  // For Hapoalim with OTP, we need much more time (user interaction involved)
+  // For Hapoalim with OTP, we need much more time (3 attempts × user wait + processing).
   if (isHapoalim) {
-    globalTimeoutMs = Math.max(globalTimeoutMs, 300000); // Ensure at least 5 minutes
+    globalTimeoutMs = Math.max(globalTimeoutMs, 720000); // 12 min ceiling — enough for 3 retries
     logger.info({ globalTimeoutMs }, '[Scraper] Increased timeout for Hapoalim OTP flow');
   }
 
