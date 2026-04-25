@@ -25,10 +25,23 @@ import {
 import { generateTransactionIdentifier } from './transactionUtils.js';
 import { createScraper } from 'israeli-bank-scrapers';
 import logger from '../../../utils/logger.js';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// pkillQuiet replaces `exec("pkill -f '<pattern>' || true")`. Using execFile
+// (argv form, no shell parser) removes the latent shell-injection sink if any
+// caller ever passes a non-literal pattern. Swallows non-zero exit codes to
+// emulate the original `|| true` semantics (pkill returns 1 when no process
+// matches, which is expected here).
+async function pkillQuiet(pattern) {
+  try {
+    await execFileAsync('pkill', ['-f', pattern]);
+  } catch {
+    // no-op: pkill exits non-zero when nothing matches, which is fine.
+  }
+}
 import {
   getChromePath,
   getScraperOptions,
@@ -716,16 +729,16 @@ export async function stopAllScrapers(client) {
   try {
     if (process.platform === 'darwin') {
       // macOS: target Chrome/Chromium with headless or automation flags
-      await execAsync("pkill -f 'Google Chrome.*headless' || true");
-      await execAsync("pkill -f 'Chromium.*headless' || true");
-      await execAsync("pkill -f 'Chrome for Testing.*headless' || true");
-      await execAsync("pkill -f 'Google Chrome.*remote-debugging-port=9223' || true");
-      await execAsync("pkill -f 'Chrome for Testing.*remote-debugging-port=9223' || true");
+      await pkillQuiet('Google Chrome.*headless');
+      await pkillQuiet('Chromium.*headless');
+      await pkillQuiet('Chrome for Testing.*headless');
+      await pkillQuiet('Google Chrome.*remote-debugging-port=9223');
+      await pkillQuiet('Chrome for Testing.*remote-debugging-port=9223');
     } else {
       // Linux/others
-      await execAsync("pkill -f 'chromium.*headless' || true");
-      await execAsync("pkill -f 'chrome.*headless' || true");
-      await execAsync("pkill -f 'Chrome for Testing.*headless' || true");
+      await pkillQuiet('chromium.*headless');
+      await pkillQuiet('chrome.*headless');
+      await pkillQuiet('Chrome for Testing.*headless');
     }
     logger.info('[Scraper Utils] Browser processes killed');
   } catch (err) {
