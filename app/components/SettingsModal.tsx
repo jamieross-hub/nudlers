@@ -60,8 +60,9 @@ interface Settings {
   update_category_on_rescrape: boolean;
 
   scrape_retries: number;
-  gemini_api_key: string;
-  gemini_model: string;
+  ai_base_url: string;
+  ai_api_key: string;
+  ai_model: string;
   isracard_scrape_categories: boolean;
   whatsapp_enabled: boolean;
   whatsapp_hour: number;
@@ -220,8 +221,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     scraper_log_http_requests: false,
     update_category_on_rescrape: false,
     scrape_retries: 3,
-    gemini_api_key: '',
-    gemini_model: 'gemini-2.5-flash',
+    ai_base_url: 'https://openrouter.ai/api/v1',
+    ai_api_key: '',
+    ai_model: 'google/gemini-2.5-flash',
     isracard_scrape_categories: true,
     whatsapp_enabled: false,
     whatsapp_hour: 8,
@@ -349,8 +351,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
             : parseBool(data.settings.scraper_log_http_requests),
           update_category_on_rescrape: parseBool(data.settings.update_category_on_rescrape),
           scrape_retries: parseInt(data.settings.scrape_retries) || 3,
-          gemini_api_key: (data.settings.gemini_api_key || '').replace(/"/g, ''),
-          gemini_model: (data.settings.gemini_model || 'gemini-2.5-flash').replace(/"/g, ''),
+          ai_base_url: (data.settings.ai_base_url || 'https://openrouter.ai/api/v1').replace(/"/g, ''),
+          ai_api_key: (data.settings.ai_api_key || data.settings.gemini_api_key || '').replace(/"/g, ''),
+          ai_model: (data.settings.ai_model || 'google/gemini-2.5-flash').replace(/"/g, ''),
           isracard_scrape_categories: data.settings.isracard_scrape_categories === undefined
             ? true // Default to true
             : parseBool(data.settings.isracard_scrape_categories),
@@ -789,53 +792,111 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
               </SettingRow>
             </SettingSection>
 
-            {/* AI Configuration */}
+            {/* AI Provider */}
             <SettingSection>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                 <AutoAwesomeIcon sx={{ color: '#ec4899' }} />
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  AI Configuration
+                  AI Provider
                 </Typography>
               </Box>
 
-
+              <Typography variant="caption" sx={{ display: 'block', color: theme.palette.text.secondary, mb: 1 }}>
+                Configure any OpenAI-compatible provider (OpenRouter, Groq, Together, OpenAI, LMStudio, Ollama, etc.).
+                Use one of the presets below or paste a custom base URL.
+              </Typography>
 
               <SettingRow>
                 <Box sx={{ flex: 1, mr: 2 }}>
-                  <Typography variant="body1">Gemini API Key</Typography>
+                  <Typography variant="body1">Provider Preset</Typography>
                   <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
-                    Used for AI Assistant and smart transaction analysis.
+                    Quickly fill the base URL for popular providers
+                  </Typography>
+                </Box>
+                <StyledSelect
+                  value={(() => {
+                    const presets: Record<string, string> = {
+                      'https://openrouter.ai/api/v1': 'openrouter',
+                      'https://api.openai.com/v1': 'openai',
+                      'https://api.groq.com/openai/v1': 'groq',
+                      'https://api.together.xyz/v1': 'together',
+                      'https://generativelanguage.googleapis.com/v1beta/openai': 'gemini',
+                    };
+                    return presets[settings.ai_base_url] || 'custom';
+                  })()}
+                  onChange={(e) => {
+                    const preset = e.target.value as string;
+                    const urls: Record<string, string> = {
+                      openrouter: 'https://openrouter.ai/api/v1',
+                      openai: 'https://api.openai.com/v1',
+                      groq: 'https://api.groq.com/openai/v1',
+                      together: 'https://api.together.xyz/v1',
+                      gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                    };
+                    if (preset !== 'custom' && urls[preset]) {
+                      setSettings({ ...settings, ai_base_url: urls[preset] });
+                    }
+                  }}
+                  size="small"
+                  sx={{ width: 250 }}
+                >
+                  <MenuItem value="openrouter">OpenRouter (Recommended)</MenuItem>
+                  <MenuItem value="openai">OpenAI</MenuItem>
+                  <MenuItem value="groq">Groq</MenuItem>
+                  <MenuItem value="together">Together AI</MenuItem>
+                  <MenuItem value="gemini">Google Gemini (OpenAI-compat)</MenuItem>
+                  <MenuItem value="custom">Custom</MenuItem>
+                </StyledSelect>
+              </SettingRow>
+
+              <SettingRow>
+                <Box sx={{ flex: 1, mr: 2 }}>
+                  <Typography variant="body1">Base URL</Typography>
+                  <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
+                    OpenAI-compatible endpoint, e.g. https://openrouter.ai/api/v1
+                  </Typography>
+                </Box>
+                <StyledTextField
+                  value={settings.ai_base_url}
+                  onChange={(e) => setSettings({ ...settings, ai_base_url: e.target.value })}
+                  placeholder="https://openrouter.ai/api/v1"
+                  size="small"
+                  sx={{ width: '350px' }}
+                />
+              </SettingRow>
+
+              <SettingRow>
+                <Box sx={{ flex: 1, mr: 2 }}>
+                  <Typography variant="body1">API Key</Typography>
+                  <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
+                    Bearer token for the selected provider
                   </Typography>
                 </Box>
                 <StyledTextField
                   type="password"
-                  value={settings.gemini_api_key}
-                  onChange={(e) => setSettings({ ...settings, gemini_api_key: e.target.value })}
-                  placeholder={settings.gemini_api_key ? '••••••••••••••••' : 'Enter API Key'}
+                  value={settings.ai_api_key}
+                  onChange={(e) => setSettings({ ...settings, ai_api_key: e.target.value })}
+                  placeholder={settings.ai_api_key ? '••••••••••••••••' : 'Enter API Key'}
                   size="small"
-                  sx={{ width: '250px' }}
+                  sx={{ width: '350px' }}
                 />
               </SettingRow>
 
-
-
               <SettingRow>
                 <Box sx={{ flex: 1, mr: 2 }}>
-                  <Typography variant="body1">Gemini Model</Typography>
+                  <Typography variant="body1">Model</Typography>
                   <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
-                    AI model to use for chat and summaries
+                    Provider-specific model slug. Examples: <code>google/gemini-2.5-flash</code>,{' '}
+                    <code>openai/gpt-4o-mini</code>, <code>anthropic/claude-3.5-sonnet</code>
                   </Typography>
                 </Box>
-                <StyledSelect
-                  value={settings.gemini_model}
-                  onChange={(e) => setSettings({ ...settings, gemini_model: e.target.value as string })}
+                <StyledTextField
+                  value={settings.ai_model}
+                  onChange={(e) => setSettings({ ...settings, ai_model: e.target.value })}
+                  placeholder="google/gemini-2.5-flash"
                   size="small"
-                  sx={{ width: 250 }}
-                >
-                  <MenuItem value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</MenuItem>
-                  <MenuItem value="gemini-3-flash-preview">Gemini 3 Flash (Limited)</MenuItem>
-                  <MenuItem value="gemini-3-pro-preview">Gemini 3 Pro (Limited)</MenuItem>
-                </StyledSelect>
+                  sx={{ width: '350px' }}
+                />
               </SettingRow>
             </SettingSection>
 

@@ -1,8 +1,8 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getDB } from '../pages/api/db.js';
 import logger from './logger.js';
 import { getBillingCycleSql } from "./transaction_logic.js";
 import { format } from 'date-fns';
+import { generateText } from './aiClient.js';
 
 /**
  * Generates a daily financial summary using AI.
@@ -12,10 +12,10 @@ export async function generateDailySummary() {
     const client = await getDB();
 
     try {
-        // Get Gemini and WhatsApp settings
+        // Get summary mode + billing cycle settings (AI provider config is resolved by aiClient)
         const settingsResult = await client.query(
-            'SELECT key, value FROM app_settings WHERE key IN ($1, $2, $3, $4)',
-            ['gemini_api_key', 'gemini_model', 'whatsapp_summary_mode', 'billing_cycle_start_day']
+            'SELECT key, value FROM app_settings WHERE key IN ($1, $2)',
+            ['whatsapp_summary_mode', 'billing_cycle_start_day']
         );
 
         const settings = {};
@@ -23,14 +23,8 @@ export async function generateDailySummary() {
             settings[row.key] = typeof row.value === 'string' ? row.value.replace(/"/g, '') : row.value;
         }
 
-        let apiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-            throw new Error('Gemini API key not configured');
-        }
-
-        const modelName = settings.gemini_model || 'gemini-2.5-flash';
         const summaryMode = settings.whatsapp_summary_mode || 'calendar';
-        const startDay = parseInt(settings.billing_cycle_start_day) || 10;
+        const startDay = parseInt(settings.billing_cycle_start_day, 10) || 10;
 
         // Calculate Date Range & Column
         let startDate, endDate, dateColumn;
@@ -193,10 +187,7 @@ export async function generateDailySummary() {
         const burndownStatus = totalBudget ? (burnRate <= budgetRate ? 'GOOD' : 'BEHIND') : 'N/A';
         const expectedSpendAtThisPoint = budgetRate * daysPassed;
 
-        // Generate AI summary
-        const genAI = new GoogleGenerativeAI(apiKey);
-
-        const defaultPrompt = `צור סיכום פיננסי מעוצב, ישיר ומרשים לוואטסאפ (עברית). 
+        const defaultPrompt = `צור סיכום פיננסי מעוצב, ישיר ומרשים לוואטסאפ (עברית).
 אל תתחיל בהקדמות כמו "הנה הסיכום", התחל ישר בתוכן.
 
 💰 *סיכום הוצאות יומי* 💰
@@ -224,34 +215,14 @@ ${categoryBudgets.map(c => {
 
         const prompt = defaultPrompt;
 
-        try {
-            const model = genAI.getGenerativeModel({
-                model: modelName,
-                generationConfig: {
-                    maxOutputTokens: 2000,
-                    temperature: 0.7,
-                }
-            });
-
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-
-            // Log finish reason and safety ratings for debugging
-            const finishReason = response.candidates?.[0]?.finishReason;
-            const safetyRatings = response.candidates?.[0]?.safetyRatings;
-            logger.info({
-                model: modelName,
-                finishReason,
-                safetyRatings,
-                textLength: response.text()?.length
-            }, 'Daily summary generated');
-
-            const text = response.text();
-            return text;
-        } catch (modelError) {
-            logger.error({ modelName, error: modelError.message }, 'Model failed');
-            throw modelError;
-        }
+        // Higher token cap to accommodate thinking models (e.g. Gemini 2.5 Flash via OpenRouter)
+        // which spend part of the budget on hidden reasoning before producing visible output.
+        const { text } = await generateText({
+            prompt,
+            temperature: 0.7,
+            maxTokens: 8000
+        });
+        return text;
 
     } catch (error) {
         logger.error({ error: error.message, stack: error.stack }, 'Error generating daily summary');

@@ -66,6 +66,10 @@ export const APP_SETTINGS_KEYS = {
     WHATSAPP_LAST_SENT_DATE: 'whatsapp_last_sent_date',
     WHATSAPP_SUMMARY_MODE: 'whatsapp_summary_mode',
     GEMINI_MODEL: 'gemini_model',
+    AI_BASE_URL: 'ai_base_url',
+    AI_API_KEY: 'ai_api_key',
+    AI_MODEL: 'ai_model',
+    AI_EXTRA_HEADERS: 'ai_extra_headers',
     SYNC_LAST_RUN_AT: 'sync_last_run_at',
     SYNC_HOUR: 'sync_hour'
 };

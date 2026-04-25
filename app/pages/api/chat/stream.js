@@ -1,6 +1,6 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getDB } from '../db';
 import logger from '../../../utils/logger.js';
+import { getAIClient, mapAIError } from '../../../utils/aiClient.js';
 
 // Verify auth for AI chat endpoint.
 // If NUDLERS_API_KEY is set, require it as Authorization header or ?apiKey query param.
@@ -8,17 +8,14 @@ import logger from '../../../utils/logger.js';
 function verifyAuth(req) {
   const requiredKey = process.env.NUDLERS_API_KEY;
   if (!requiredKey) {
-    // No API key configured - local-only mode, allow all requests
     return true;
   }
 
-  // Check Authorization: Bearer <key>
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ') && authHeader.slice(7) === requiredKey) {
     return true;
   }
 
-  // Check ?apiKey=<key> query param
   if (req.query?.apiKey === requiredKey) {
     return true;
   }
@@ -38,7 +35,7 @@ CRITICAL RULES:
 
 You have access to these tools:
 - get_transactions: Get raw transaction list (filterable by date, category, search term)
-- get_spending_by_category: Get spending breakdown by category  
+- get_spending_by_category: Get spending breakdown by category
 - get_monthly_comparison: Compare spending between months
 - get_recurring_payments: Get subscriptions and installment plans
 - get_top_merchants: Get biggest spending by merchant/vendor
@@ -50,81 +47,97 @@ When analyzing data:
 - Give actionable insights
 - Use bullet points and bold for key numbers`;
 
-// Tool definitions
-const tools = [{
-  functionDeclarations: [
-    {
-      name: "get_transactions",
-      description: "Fetch transaction list from database. Use this for detailed transaction analysis, finding specific transactions, or when you need raw data to calculate.",
+// OpenAI-format tool definitions
+const tools = [
+  {
+    type: 'function',
+    function: {
+      name: 'get_transactions',
+      description: 'Fetch transaction list from database. Use this for detailed transaction analysis, finding specific transactions, or when you need raw data to calculate.',
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
-          startDate: { type: "string", description: "Start date (YYYY-MM-DD). Defaults to first day of current month." },
-          endDate: { type: "string", description: "End date (YYYY-MM-DD). Defaults to today." },
-          category: { type: "string", description: "Filter by category name (e.g., 'Food', 'Transport'). Leave empty for all." },
-          searchTerm: { type: "string", description: "Search in transaction names (e.g., 'Netflix', 'Restaurant')" },
-          limit: { type: "number", description: "Max transactions to return. Default 100, max 500." },
-          sortBy: { type: "string", description: "Sort by 'amount' (largest first) or 'date' (newest first). Default: date" }
+          startDate: { type: 'string', description: 'Start date (YYYY-MM-DD). Defaults to first day of current month.' },
+          endDate: { type: 'string', description: 'End date (YYYY-MM-DD). Defaults to today.' },
+          category: { type: 'string', description: "Filter by category name (e.g., 'Food', 'Transport'). Leave empty for all." },
+          searchTerm: { type: 'string', description: "Search in transaction names (e.g., 'Netflix', 'Restaurant')" },
+          limit: { type: 'number', description: 'Max transactions to return. Default 100, max 500.' },
+          sortBy: { type: 'string', description: "Sort by 'amount' (largest first) or 'date' (newest first). Default: date" }
         }
-      }
-    },
-    {
-      name: "get_spending_by_category",
-      description: "Get total spending grouped by category. Use this for category analysis, pie charts, or understanding where money goes.",
-      parameters: {
-        type: "object",
-        properties: {
-          startDate: { type: "string", description: "Start date (YYYY-MM-DD)" },
-          endDate: { type: "string", description: "End date (YYYY-MM-DD)" }
-        }
-      }
-    },
-    {
-      name: "get_monthly_comparison",
-      description: "Compare spending between two months or periods. Use for trend analysis.",
-      parameters: {
-        type: "object",
-        properties: {
-          month1: { type: "string", description: "First month (YYYY-MM)" },
-          month2: { type: "string", description: "Second month (YYYY-MM)" }
-        }
-      }
-    },
-    {
-      name: "get_recurring_payments",
-      description: "Get all recurring subscriptions and active installment plans. Use to show fixed monthly costs.",
-      parameters: {
-        type: "object",
-        properties: {}
-      }
-    },
-    {
-      name: "get_top_merchants",
-      description: "Get spending grouped by merchant/store name. Use to find where most money is spent.",
-      parameters: {
-        type: "object",
-        properties: {
-          startDate: { type: "string", description: "Start date (YYYY-MM-DD)" },
-          endDate: { type: "string", description: "End date (YYYY-MM-DD)" },
-          limit: { type: "number", description: "Number of top merchants. Default 20." }
-        }
-      }
-    },
-    {
-      name: "search_transactions",
-      description: "Search transactions by description. Use when user asks about specific merchant or type of spending.",
-      parameters: {
-        type: "object",
-        properties: {
-          searchTerm: { type: "string", description: "Text to search for in transaction names" },
-          startDate: { type: "string", description: "Start date (YYYY-MM-DD)" },
-          endDate: { type: "string", description: "End date (YYYY-MM-DD)" }
-        },
-        required: ["searchTerm"]
       }
     }
-  ]
-}];
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_spending_by_category',
+      description: 'Get total spending grouped by category. Use this for category analysis, pie charts, or understanding where money goes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string', description: 'Start date (YYYY-MM-DD)' },
+          endDate: { type: 'string', description: 'End date (YYYY-MM-DD)' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_monthly_comparison',
+      description: 'Compare spending between two months or periods. Use for trend analysis.',
+      parameters: {
+        type: 'object',
+        properties: {
+          month1: { type: 'string', description: 'First month (YYYY-MM)' },
+          month2: { type: 'string', description: 'Second month (YYYY-MM)' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_recurring_payments',
+      description: 'Get all recurring subscriptions and active installment plans. Use to show fixed monthly costs.',
+      parameters: {
+        type: 'object',
+        properties: {}
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_top_merchants',
+      description: 'Get spending grouped by merchant/store name. Use to find where most money is spent.',
+      parameters: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string', description: 'Start date (YYYY-MM-DD)' },
+          endDate: { type: 'string', description: 'End date (YYYY-MM-DD)' },
+          limit: { type: 'number', description: 'Number of top merchants. Default 20.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_transactions',
+      description: 'Search transactions by description. Use when user asks about specific merchant or type of spending.',
+      parameters: {
+        type: 'object',
+        properties: {
+          searchTerm: { type: 'string', description: 'Text to search for in transaction names' },
+          startDate: { type: 'string', description: 'Start date (YYYY-MM-DD)' },
+          endDate: { type: 'string', description: 'End date (YYYY-MM-DD)' }
+        },
+        required: ['searchTerm']
+      }
+    }
+  }
+];
 
 // Get default dates (current month)
 function getDefaultDates() {
@@ -144,11 +157,11 @@ async function getTransactions({ startDate, endDate, category, searchTerm, limit
     limit = Math.min(limit, 500);
 
     let sql = `
-      SELECT 
-        name, 
-        price, 
-        date, 
-        category, 
+      SELECT
+        name,
+        price,
+        date,
+        category,
         vendor,
         installments_number,
         installments_total
@@ -211,14 +224,14 @@ async function getSpendingByCategory({ startDate, endDate }) {
     const end = endDate || defaults.endDate;
 
     const result = await db.query(`
-      SELECT 
+      SELECT
         category,
         COUNT(*) as count,
         ABS(ROUND(SUM(price))) as total,
         ABS(ROUND(AVG(price))) as average
       FROM transactions
       WHERE date >= $1::date AND date <= $2::date
-        AND category IS NOT NULL 
+        AND category IS NOT NULL
         AND category != ''
         AND category != 'Bank'
         AND category != 'Income'
@@ -261,7 +274,7 @@ async function getMonthlyComparison({ month1, month2 }) {
     const m2 = month2 || previousMonth;
 
     const result = await db.query(`
-      SELECT 
+      SELECT
         TO_CHAR(date, 'YYYY-MM') as month,
         category,
         ABS(ROUND(SUM(price))) as total
@@ -314,11 +327,10 @@ async function getMonthlyComparison({ month1, month2 }) {
 async function getRecurringPayments() {
   const db = await getDB();
   try {
-    // Active installments
     const installmentsResult = await db.query(`
       WITH latest AS (
-        SELECT 
-          name, price, category, 
+        SELECT
+          name, price, category,
           installments_number, installments_total,
           date,
           ROW_NUMBER() OVER (
@@ -332,9 +344,8 @@ async function getRecurringPayments() {
       ORDER BY ABS(price) DESC
     `);
 
-    // Recurring (same amount, multiple months)
     const recurringResult = await db.query(`
-      SELECT 
+      SELECT
         name,
         ABS(price) as amount,
         category,
@@ -392,7 +403,7 @@ async function getTopMerchants({ startDate, endDate, limit = 20 }) {
     const end = endDate || defaults.endDate;
 
     const result = await db.query(`
-      SELECT 
+      SELECT
         name as merchant,
         category,
         COUNT(*) as transaction_count,
@@ -432,7 +443,7 @@ async function searchTransactions({ searchTerm, startDate, endDate }) {
     const end = endDate || now.toISOString().split('T')[0];
 
     const result = await db.query(`
-      SELECT 
+      SELECT
         name, price, date, category, vendor
       FROM transactions
       WHERE date >= $1::date AND date <= $2::date
@@ -460,7 +471,6 @@ async function searchTransactions({ searchTerm, startDate, endDate }) {
   }
 }
 
-// Execute function
 async function executeFunction(name, args) {
   logger.info({ functionName: name, args }, 'Executing function');
   switch (name) {
@@ -484,44 +494,29 @@ export default async function handler(req, res) {
   }
 
   const db = await getDB();
-  let apiKey = '';
-  let modelName = 'gemini-2.5-flash'; // Default model
 
   try {
-    // Get both API key and model setting
-    const settingsResult = await db.query(
-      'SELECT key, value FROM app_settings WHERE key IN ($1, $2)',
-      ['gemini_api_key', 'gemini_model']
-    );
-
-    for (const row of settingsResult.rows) {
-      const rawValue = row.value;
-      const cleanValue = typeof rawValue === 'string' ? rawValue.replace(/"/g, '') : rawValue;
-      if (row.key === 'gemini_api_key') {
-        apiKey = cleanValue;
-      } else if (row.key === 'gemini_model') {
-        modelName = cleanValue;
-      }
-    }
-
-    if (!apiKey) {
-      apiKey = process.env.GEMINI_API_KEY;
-    }
-
-    if (!apiKey) {
-      return res.status(500).json({ error: 'Gemini API key not configured. Please add it in App Settings.' });
-    }
-
     const { message, context, sessionId } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Set up SSE with headers to prevent buffering
+    // Resolve provider config
+    let openai, model;
+    try {
+      ({ openai, model } = await getAIClient());
+    } catch (e) {
+      if (e.code === 'AI_API_KEY_MISSING') {
+        return res.status(500).json({ error: e.message });
+      }
+      throw e;
+    }
+
+    // Set up SSE
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering for Nginx/proxies
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
     const sendEvent = (data) => {
@@ -530,7 +525,6 @@ export default async function handler(req, res) {
 
     let currentSessionId = sessionId;
 
-    // 1. Ensure we have a session and save the user message
     if (!currentSessionId) {
       const sessionResult = await db.query(
         'INSERT INTO chat_sessions (title) VALUES ($1) RETURNING id',
@@ -538,68 +532,27 @@ export default async function handler(req, res) {
       );
       currentSessionId = sessionResult.rows[0].id;
     } else {
-      // Update session timestamp
       await db.query('UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [currentSessionId]);
     }
 
-    // Save user message
     await db.query(
       'INSERT INTO chat_messages (session_id, role, content) VALUES ($1, $2, $3)',
       [currentSessionId, 'user', message]
     );
 
-    // Send the sessionId to the frontend immediately
     sendEvent({ status: 'session_assigned', sessionId: currentSessionId });
 
-    // 2. Fetch history if needed
-    // We fetch the 50 most recent messages and order them chronologically by ID
+    // Fetch prior history (most recent 50, chronological)
     const historyResult = await db.query(
       `SELECT role, content FROM (
-        SELECT id, role, content FROM chat_messages 
-        WHERE session_id = $1 AND role != 'system' 
+        SELECT id, role, content FROM chat_messages
+        WHERE session_id = $1 AND role != 'system'
         ORDER BY id DESC LIMIT 50
       ) AS sub ORDER BY id ASC`,
       [currentSessionId]
     );
 
-    // Filter out the message we just saved for history (it will be the last one in the chronological result)
-    // We also ensure it alternates correctly if somehow the DB has inconsistent state
-    const rawHistory = historyResult.rows.slice(0, -1);
-    const previousMessages = [];
-
-    for (let i = 0; i < rawHistory.length; i++) {
-      const r = rawHistory[i];
-      if (!r.content || r.content.trim() === '') continue;
-
-      const role = r.role === 'assistant' ? 'model' : 'user';
-
-      // Gemini history MUST alternate user/model. If consecutive, merge them.
-      if (previousMessages.length > 0 && previousMessages[previousMessages.length - 1].role === role) {
-        previousMessages[previousMessages.length - 1].parts[0].text += "\n" + r.content;
-        continue;
-      }
-
-      // History MUST start with a user message
-      if (previousMessages.length === 0 && role !== 'user') {
-        continue;
-      }
-
-      previousMessages.push({
-        role,
-        parts: [{ text: r.content }]
-      });
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-
-    // Use the model from settings (no fallback loop - show actual error)
-    let model = null;
-    let workingModel = modelName;
-    let initError = null;
-
-    logger.info({ modelName }, 'Using model from settings');
-
-    // Build context
+    // Build context appended to system prompt
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     let contextInfo = `\nToday is ${todayStr}.`;
@@ -608,152 +561,138 @@ export default async function handler(req, res) {
       contextInfo += ` Current date range filter: ${context.dateRange.startDate} to ${context.dateRange.endDate}.`;
     }
 
-    try {
-      model = genAI.getGenerativeModel({
-        model: modelName,
-        systemInstruction: SYSTEM_PROMPT + contextInfo,
-        tools,
-        generationConfig: { temperature: 0.2, maxOutputTokens: 2000 }
-      });
-    } catch (e) {
-      initError = e;
-      logger.error({ modelName, error: e.message }, 'Failed to initialize model');
+    // Build OpenAI message array. The last row in historyResult is the user message we just saved.
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT + contextInfo }
+    ];
+    for (const r of historyResult.rows) {
+      if (!r.content || r.content.trim() === '') continue;
+      const role = r.role === 'assistant' ? 'assistant' : 'user';
+      messages.push({ role, content: r.content });
     }
 
-    if (!model) {
-      let errorMsg = `Failed to initialize model "${modelName}". `;
-      if (initError) {
-        const errLower = initError.message?.toLowerCase() || '';
-        if (errLower.includes('quota')) {
-          errorMsg = 'API quota exceeded. Please try again later or check your Gemini API billing.';
-        } else if (errLower.includes('api_key_invalid') || errLower.includes('api key not valid')) {
-          errorMsg = 'Invalid Gemini API key. Please check your settings.';
-        } else if (errLower.includes('not found') || errLower.includes('404')) {
-          errorMsg = `Model "${modelName}" not found. Please check your API key has access to this model or try a different model in settings.`;
-        } else {
-          errorMsg += initError.message || 'Unknown error.';
-        }
-      }
-      sendEvent({ error: errorMsg, status: 'error' });
-      res.end();
-      return;
-    }
-
-    sendEvent({ status: 'thinking', model: workingModel });
-
-    // Log the history being sent to startChat for debugging
-    logger.debug({ historyLength: previousMessages.length, lastMessageRole: previousMessages.length > 0 ? previousMessages[previousMessages.length - 1].role : 'none' }, 'Starting chat with history');
-
-    const chat = model.startChat({
-      history: previousMessages
-    });
-
-    // 3. Send message with true streaming
-    let result;
-    try {
-      logger.debug({ message }, 'Sending initial user message');
-      result = await chat.sendMessageStream(message);
-    } catch (err) {
-      logger.error({ error: err.message, stack: err.stack }, 'Initial sendMessageStream failed');
-      throw err;
-    }
+    sendEvent({ status: 'thinking', model });
 
     let fullText = '';
     let iterationCount = 0;
     const MAX_ITERATIONS = 5;
 
-    // Loop to handle potential function calls and final response
+    // Streaming + tool-call loop
     while (iterationCount < MAX_ITERATIONS) {
       iterationCount++;
-      let functionCalls = [];
+
+      let stream;
+      try {
+        stream = await openai.chat.completions.create({
+          model,
+          messages,
+          tools,
+          temperature: 0.2,
+          max_tokens: 2000,
+          stream: true
+        });
+      } catch (err) {
+        logger.error({ error: err.message, status: err.status }, 'AI request failed');
+        throw err;
+      }
+
+      // Assemble streamed deltas: text chunks accumulate into fullText, tool_calls accumulate by index.
+      const toolCallAccum = new Map(); // index -> { id, name, args (string) }
+      let assistantText = '';
 
       try {
-        for await (const chunk of result.stream) {
-          // Handle text content safely - chunk.text() throws if no text is present (e.g. function call chunks)
-          try {
-            const chunkText = chunk.text();
-            if (chunkText) {
-              fullText += chunkText;
-              // Send streaming event to frontend
-              sendEvent({ status: 'streaming', text: fullText, done: false });
-              // Force flush if possible
-              if (res.flush) res.flush();
-              // Small delay to ensure network chunks are distinct
-              await new Promise(r => setTimeout(r, 10));
-            }
-          } catch (e) {
-            // Ignore error when chunk contains no text (likely a function call chunk)
-            // logger.debug('Chunk contains no text, skipping text extraction');
+        for await (const chunk of stream) {
+          const choice = chunk.choices?.[0];
+          if (!choice) continue;
+          const delta = choice.delta || {};
+
+          if (delta.content) {
+            assistantText += delta.content;
+            fullText += delta.content;
+            sendEvent({ status: 'streaming', text: fullText, done: false });
+            if (res.flush) res.flush();
           }
 
-          // Handle function calls
-          try {
-            const calls = chunk.functionCalls();
-            if (calls && calls.length > 0) {
-              functionCalls = functionCalls.concat(calls);
+          if (Array.isArray(delta.tool_calls)) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0;
+              const existing = toolCallAccum.get(idx) || { id: '', name: '', args: '' };
+              if (tc.id) existing.id = tc.id;
+              if (tc.function?.name) existing.name = tc.function.name;
+              if (tc.function?.arguments) existing.args += tc.function.arguments;
+              toolCallAccum.set(idx, existing);
             }
-          } catch (e) {
-            logger.debug('Chunk contains no function calls');
           }
         }
       } catch (streamErr) {
         logger.error({ error: streamErr.message }, 'Stream iteration failed');
-        if (streamErr.message?.includes('output text or tool calls')) {
-          // This specific error happens if the model output is empty
-          if (fullText) break; // If we already have some text, just finish
-          fullText = "I encountered an issue generating a response. This can happen with experimental models or safety filters. Please try rephrasing your question.";
-          break;
-        }
+        if (fullText) break;
         throw streamErr;
       }
 
-      // If no function calls, we are done
-      if (functionCalls.length === 0) {
-        logger.debug('No function calls found in stream, finishing turn');
+      // No tool calls → done
+      if (toolCallAccum.size === 0) {
         break;
       }
 
-      logger.info({ count: functionCalls.length, names: functionCalls.map(f => f.name) }, 'Received function calls');
+      // Materialize the assistant turn (with tool_calls) and execute each call.
+      // Some non-spec providers may omit `id` — synthesize one so tool_call_id is stable.
+      const toolCalls = Array.from(toolCallAccum.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([idx, tc]) => ({
+          id: tc.id || `call_${currentSessionId}_${iterationCount}_${idx}`,
+          type: 'function',
+          function: { name: tc.name, arguments: tc.args || '{}' }
+        }));
 
-      // Execute functions
-      sendEvent({
-        status: 'fetching_data',
-        functions: functionCalls.map(f => f.name),
-        message: `Analyzing: ${functionCalls.map(f => f.name.replace(/_/g, ' ')).join(', ')}...`
+      messages.push({
+        role: 'assistant',
+        content: assistantText || null,
+        tool_calls: toolCalls
       });
 
-      const functionResponses = [];
-      for (const call of functionCalls) {
-        try {
-          const funcResult = await executeFunction(call.name, call.args);
-          functionResponses.push({
-            functionResponse: { name: call.name, response: funcResult }
-          });
-        } catch (err) {
-          logger.error({ functionName: call.name, error: err.message }, 'Function execution error');
-          functionResponses.push({
-            functionResponse: { name: call.name, response: { error: err.message } }
-          });
-        }
-      }
+      logger.info({ count: toolCalls.length, names: toolCalls.map(t => t.function.name) }, 'Received tool calls');
 
-      // Send function responses back and get a new stream
-      try {
-        logger.debug({ responseCount: functionResponses.length }, 'Sending function responses back to model');
-        result = await chat.sendMessageStream(functionResponses);
-      } catch (err) {
-        logger.error({ error: err.message, stack: err.stack }, 'Failed to send function responses');
-        // If we fail here, it's likely the sync error. We should break.
-        // But we should also let the user know.
-        fullText += "\n\n*(Error: I lost the connection while processing results. Please try again.)*";
-        throw err;
+      sendEvent({
+        status: 'fetching_data',
+        functions: toolCalls.map(t => t.function.name),
+        message: `Analyzing: ${toolCalls.map(t => t.function.name.replace(/_/g, ' ')).join(', ')}...`
+      });
+
+      for (const tc of toolCalls) {
+        let parsedArgs;
+        let parseError = null;
+        try {
+          parsedArgs = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+        } catch (e) {
+          parseError = e.message;
+          logger.warn({ name: tc.function.name, args: tc.function.arguments, err: e.message }, 'Failed to parse tool args');
+        }
+
+        let toolResult;
+        if (parseError) {
+          // Surface parse error to the model so it can retry with valid JSON
+          toolResult = { error: `Invalid JSON arguments: ${parseError}` };
+        } else {
+          try {
+            toolResult = await executeFunction(tc.function.name, parsedArgs);
+          } catch (err) {
+            logger.error({ functionName: tc.function.name, error: err.message }, 'Function execution error');
+            toolResult = { error: err.message };
+          }
+        }
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(toolResult)
+        });
       }
-      // We don't reset fullText here because we want the AI's final answer 
-      // to follow its thoughts/actions if any (though usually it just replaces it in this UI)
+      // Loop continues — model now has tool results and will produce final text or more tool calls.
     }
 
     if (iterationCount >= MAX_ITERATIONS) {
-      logger.warn('AI reached max function call iterations');
+      logger.warn('AI reached max tool call iterations');
       sendEvent({
         status: 'streaming',
         text: fullText + '\n\n*(Note: I reached my limit of analysis steps for this request. Please ask for more details if needed.)*',
@@ -761,7 +700,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // Save final assistant message to DB
+    if (!fullText) {
+      fullText = "I couldn't generate a response. Please try rephrasing your question.";
+    }
+
     await db.query(
       'INSERT INTO chat_messages (session_id, role, content) VALUES ($1, $2, $3)',
       [currentSessionId, 'assistant', fullText]
@@ -771,38 +713,21 @@ export default async function handler(req, res) {
       status: 'complete',
       text: fullText,
       done: true,
-      model: workingModel,
+      model,
       sessionId: currentSessionId
     });
-
   } catch (error) {
     logger.error({ error: error.message, stack: error.stack }, 'AI Chat Error');
     if (res.writableEnded) return;
 
-    let userMessage = error.message || 'Failed to get AI response';
-    const errLower = userMessage.toLowerCase();
+    const userMessage = mapAIError(error, 'AI');
 
-    if (errLower.includes('quota')) {
-      userMessage = 'API quota exceeded. Please try again later or check your Gemini API billing.';
-    } else if (errLower.includes('api_key_invalid') || errLower.includes('api key not valid')) {
-      userMessage = 'Invalid Gemini API key. Please check your settings.';
-    } else if (errLower.includes('not found') || errLower.includes('404')) {
-      userMessage = `Model not found. Please check your API key has access to this model or try a different model in settings.`;
-    } else if (errLower.includes('safety') || errLower.includes('blocked')) {
-      userMessage = 'Response was blocked by safety filters. Please try rephrasing your question.';
-    } else if (userMessage.includes('GoogleGenerativeAI Error')) {
-      // Extract the actual error message
-      userMessage = userMessage.split('] ').pop() || userMessage;
-
-      // Specific handling for function call sequence error
-      if (userMessage.includes('function response turn comes immediately after a function call turn')) {
-        logger.warn('History synchronization issue detected. Check if previous turn ended with function call.');
-        userMessage = 'I encountered a technical sync error. Please try asking your question again.';
-      }
+    if (!res.headersSent) {
+      return res.status(500).json({ error: userMessage });
     }
 
     try {
-      sendEvent({ error: userMessage, status: 'error' });
+      res.write(`data: ${JSON.stringify({ error: userMessage, status: 'error' })}\n\n`);
     } catch (e) {
       logger.debug({ error: e.message }, 'Failed to send SSE error event (client likely disconnected)');
     }

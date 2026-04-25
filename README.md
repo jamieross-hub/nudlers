@@ -72,7 +72,7 @@ Get your daily financial summary delivered right to WhatsApp — no Twilio, no t
 
 ### 🤖 AI-Powered Insights
 
-Ask questions about your finances in plain language using Google Gemini integration.
+Ask questions about your finances in plain language. Bring your own AI provider — any OpenAI-compatible API works (OpenRouter, OpenAI, Groq, Together, Gemini, LMStudio, Ollama, etc.).
 
 ```
 "What did I spend on groceries this month?"
@@ -308,7 +308,7 @@ All settings are configurable through the **Settings UI** (gear icon in navigati
 | **Sync** | Enable/disable, sync hour, days to fetch |
 | **Display** | Currency, date format, billing cycle start day |
 | **Scraper** | Timeout, show browser (debugging), category fetching |
-| **AI** | Gemini API key, model selection |
+| **AI** | Provider base URL, API key, model slug |
 | **WhatsApp** | Enable, send hour, recipients, summary mode |
 
 ---
@@ -317,13 +317,18 @@ All settings are configurable through the **Settings UI** (gear icon in navigati
 
 ### Built-in AI Assistant
 
-The built-in chat uses Google Gemini to answer questions about your finances:
+The built-in chat answers questions about your finances using any OpenAI-compatible AI provider:
 
 - "What's my budget status for groceries?"
 - "Show me all transactions from Rami Levy"
 - "How much did I spend on dining this month vs last month?"
 
-**Setup:** Add your `GEMINI_API_KEY` in Settings or `.env`
+**Setup:** Open **Settings → AI Provider** and configure:
+- **Base URL** — defaults to OpenRouter (`https://openrouter.ai/api/v1`). Presets included for OpenAI, Groq, Together, Gemini, or paste any custom OpenAI-compatible endpoint.
+- **API Key** — bearer token for the selected provider.
+- **Model** — provider-specific slug (e.g. `google/gemini-2.5-flash`, `openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet`).
+
+Or via env vars: `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`.
 
 ### MCP for Claude Desktop / Cursor / Claude Code
 
@@ -587,7 +592,7 @@ nudlers/
 | **Database** | PostgreSQL 16 |
 | **UI** | Material-UI v6, CSS Variables |
 | **Scraping** | israeli-bank-scrapers, Puppeteer |
-| **AI** | Google Gemini, MCP SDK |
+| **AI** | OpenAI-compatible (OpenRouter default), MCP SDK |
 | **Messaging** | whatsapp-web.js |
 | **Testing** | Vitest, Playwright |
 
