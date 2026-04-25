@@ -186,8 +186,8 @@
                         </svg>
                     </div>
                     <h3>AI Assistant</h3>
-                    <p>Ask questions about your spending in natural language. Powered by Google Gemini, get insights
-                        like "How much did I spend on groceries last month?"</p>
+                    <p>Ask questions about your spending in natural language. Bring your own AI provider — any
+                        OpenAI-compatible API works (OpenRouter, OpenAI, Groq, Gemini, Ollama, and more).</p>
                 </div>
 
                 <div class="feature-card">
@@ -310,8 +310,10 @@ NUDLERS_DB_PORT=5432
 # Resource Mode (normal | low)
 RESOURCE_MODE=normal
 
-# Optional: AI Assistant
-GEMINI_API_KEY=your_gemini_api_key</code></pre>
+# Optional: AI Assistant (any OpenAI-compatible provider)
+AI_BASE_URL=https://openrouter.ai/api/v1
+AI_API_KEY=your_provider_api_key
+AI_MODEL=google/gemini-2.5-flash</code></pre>
                         </div>
                     </div>
                 </div>
@@ -497,17 +499,22 @@ Master Key ─AES-256-GCM─▶ Your credentials (stored encrypted in DB)</pre>
                 </details>
 
                 <details class="faq-item">
-                    <summary class="faq-question">Do I need to have an API key for Gemini?</summary>
+                    <summary class="faq-question">Do I need an AI API key?</summary>
                     <div class="faq-answer">
                         <p>
-                            No, the Gemini API key is optional. Gemini is used only for two features:
+                            No, an AI API key is optional. AI is used only for two features:
                             chatting with AI about your own data in the app, and preparing the WhatsApp daily message.
-                            If you don't plan to use these features, you don't need an API key.
+                            If you don't plan to use these features, you don't need a key.
                         </p>
                         <p>
-                            In the future, we will support other AI models. However, the recommended approach
-                            is to use Nudlers through MCP (Model Context Protocol), which allows AI tools like
-                            Claude to interact with your financial data directly.
+                            Nudlers works with any OpenAI-compatible provider — OpenRouter (default), OpenAI, Groq,
+                            Together, Google Gemini, or self-hosted setups like LMStudio and Ollama. Configure the
+                            base URL, API key, and model slug in <strong>Settings → AI Provider</strong>.
+                        </p>
+                        <p>
+                            For deeper integration, the recommended approach is to use Nudlers through MCP
+                            (Model Context Protocol), which allows AI tools like Claude to interact with your
+                            financial data directly.
                         </p>
                     </div>
                 </details>
