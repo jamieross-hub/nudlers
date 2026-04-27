@@ -10,7 +10,15 @@ const handler = createApiHandler({
       ORDER BY count DESC
     `
     }),
-    transform: (result) => result.rows.map((row) => row.name)
+    transform: (result, req) => {
+        if (req.query.withCounts === 'true') {
+            return result.rows.map((row) => ({
+                name: row.name,
+                count: parseInt(row.count, 10) || 0,
+            }));
+        }
+        return result.rows.map((row) => row.name);
+    }
 });
 
 export default handler;
