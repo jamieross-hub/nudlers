@@ -283,36 +283,14 @@ const CategoryManagementModal: React.FC<CategoryManagementModalProps> = ({
     try {
       setIsLoading(true);
       setError(null);
-      const response = await fetch('/api/categories');
+      const response = await fetch('/api/categories?withCounts=true');
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error');
         const errorMessage = `Failed to fetch categories: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`;
         throw new Error(errorMessage);
       }
 
-      const categoryNames = await response.json();
-
-      // Get transaction counts for each category
-      const categoriesWithCounts = await Promise.all(
-        categoryNames.map(async (name: string) => {
-          try {
-            const countResponse = await fetch(`/api/transactions?category=${encodeURIComponent(name)}`);
-            if (!countResponse.ok) {
-              logger.warn(`Failed to fetch count for category "${name}": ${countResponse.status}`);
-              return { name, count: 0 };
-            }
-            const transactions = await countResponse.json();
-            return {
-              name,
-              count: Array.isArray(transactions) ? transactions.length : 0
-            };
-          } catch (err) {
-            logger.warn(`Error fetching count for category "${name}": ${err instanceof Error ? err.message : 'Unknown error'}`);
-            return { name, count: 0 };
-          }
-        })
-      );
-
+      const categoriesWithCounts: Category[] = await response.json();
       setCategories(categoriesWithCounts.sort((a, b) => a.name.localeCompare(b.name, 'he')));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
