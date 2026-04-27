@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import logger from '../utils/logger.js';
-import { decrypt } from '../pages/api/utils/encryption.js';
+import { decrypt } from '../pages/api/utils/encryption';
 import {
     prepareCredentials,
     validateCredentials,
