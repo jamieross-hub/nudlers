@@ -1,6 +1,11 @@
 /**
  * VaultStore is a simple in-memory singleton to store the decrypted master key.
  * This key is lost when the application process restarts.
+ *
+ * Anchored on globalThis under a Symbol.for key so that, even when Next.js bundles
+ * this module into multiple server bundles (instrumentation vs API routes in
+ * standalone output), all copies resolve to the same instance — the API route
+ * that unlocks the vault and the cron callback that reads it must share state.
  */
 class VaultStore {
     constructor() {
@@ -39,6 +44,9 @@ class VaultStore {
     }
 }
 
-// Singleton instance
-const instance = new VaultStore();
+const GLOBAL_KEY = Symbol.for('nudlers.VaultStore');
+if (!globalThis[GLOBAL_KEY]) {
+    globalThis[GLOBAL_KEY] = new VaultStore();
+}
+const instance = globalThis[GLOBAL_KEY];
 export default instance;
