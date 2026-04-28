@@ -20,7 +20,8 @@ import {
   processScrapedAccounts,
   checkScraperConcurrency,
 } from '../utils/scraperUtils';
-import { VaultLockedError } from '../utils/encryption';
+import { VaultLockedError, decrypt, encrypt } from '../utils/encryption';
+import { classifyScrapeError, ScrapeErrorTypes } from '../utils/scraperErrors';
 
 const CompanyTypes = {
   hapoalim: 'hapoalim',
@@ -33,6 +34,7 @@ const CompanyTypes = {
   massad: 'massad',
   yahav: 'yahav',
   beinleumi: 'beinleumi',
+  onezero: 'onezero',
   isracard: 'isracard',
   amex: 'amex',
   max: 'max',
@@ -102,8 +104,32 @@ async function handler(req, res) {
 
     const isBank = BANK_VENDORS.includes(options.companyId);
 
+    // OneZero: load the long-term OTP token from the DB (encrypted at rest, never travels in HTTP).
+    // If present, we'll skip the SMS round-trip; if absent, the scraper invokes our otpCodeRetriever.
+    let onezeroEnrichedCredentials = credentials;
+    if (options.companyId === 'onezero' && credentialId) {
+      try {
+        const tokenRow = await client.query(
+          'SELECT otp_long_term_token FROM vendor_credentials WHERE id = $1',
+          [credentialId]
+        );
+        const ciphertext = tokenRow.rows[0]?.otp_long_term_token;
+        if (ciphertext) {
+          onezeroEnrichedCredentials = {
+            ...credentials,
+            otpLongTermToken: decrypt(ciphertext)
+          };
+          logger.info({ credentialId }, '[Scrape Stream] OneZero: using stored long-term OTP token');
+        } else {
+          logger.info({ credentialId }, '[Scrape Stream] OneZero: no stored token, will request SMS OTP');
+        }
+      } catch (err) {
+        logger.warn({ error: err.message }, '[Scrape Stream] OneZero: failed to load stored token, falling back to SMS OTP');
+      }
+    }
+
     // Prepare and validate credentials
-    const scraperCredentials = prepareCredentials(options.companyId, credentials);
+    const scraperCredentials = prepareCredentials(options.companyId, onezeroEnrichedCredentials);
 
     try {
       validateCredentials(scraperCredentials, options.companyId);
@@ -312,24 +338,45 @@ async function handler(req, res) {
 
         result = await runScraper(client, scraperOptions, scraperCredentials, progressHandler, () => false);
 
+        // OneZero: if the scraper minted a fresh long-term token (first login or after expiry),
+        // persist it encrypted so subsequent syncs skip the SMS step.
+        if (options.companyId === 'onezero' && result?.persistentOtpToken && credentialId) {
+          try {
+            await client.query(
+              'UPDATE vendor_credentials SET otp_long_term_token = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+              [encrypt(result.persistentOtpToken), credentialId]
+            );
+            logger.info({ credentialId }, '[Scrape Stream] OneZero: persisted long-term OTP token');
+          } catch (err) {
+            logger.warn({ error: err.message, credentialId }, '[Scrape Stream] OneZero: failed to persist long-term OTP token');
+          }
+        }
+
         if (!result.success) {
-          // Don't retry if OTP was involved - the browser session is specific to the OTP attempt
+          // OTP-specific short-circuit: browser session is bound to this attempt.
           if (result.otpPending) {
             logger.info('[Scrape Stream] OTP flow was triggered but failed - not retrying');
+            const classified = classifyScrapeError({ libResult: result, capturedResponse: result.capturedResponse });
+            const otpType = classified.type === ScrapeErrorTypes.UNKNOWN ? ScrapeErrorTypes.OTP_FAILED : classified.type;
             if (auditId) {
               await updateScrapeAudit(client, auditId, 'failed', result.errorMessage || 'OTP verification failed');
             }
             if (!res.finished) {
               sendSSE(res, 'error', {
-                message: result.errorMessage || 'OTP verification failed',
-                hint: 'Please try again and enter the OTP code when prompted.',
-                attemptsMade: attempt + 1
+                type: otpType,
+                message: classified.userMessage,
+                originalMessage: result.errorMessage || classified.originalMessage,
+                retryable: false,
+                attemptsMade: attempt + 1,
               });
               res.end();
             }
             return;
           }
-          throw new Error(result.errorMessage || 'Scraper failed');
+          const failure = new Error(result.errorMessage || 'Scraper failed');
+          failure._libResult = result;
+          failure.capturedResponse = result.capturedResponse;
+          throw failure;
         }
 
         // Success - break out of retry loop
@@ -348,28 +395,50 @@ async function handler(req, res) {
 
       } catch (scrapeError) {
         lastError = scrapeError.message;
+        const classified = classifyScrapeError({
+          thrownError: scrapeError,
+          libResult: scrapeError._libResult,
+          capturedResponse: scrapeError.capturedResponse,
+        });
         logger.error({
           attempt,
           maxRetries,
-          error: scrapeError.message
+          error: scrapeError.message,
+          classifiedType: classified.type,
+          retryable: classified.retryable,
         }, '[Scrape Stream] Scrape attempt failed');
 
-        // If this was the last attempt, give up
-        if (attempt >= maxRetries) {
-          logger.error({
-            totalAttempts: attempt + 1,
-            maxRetries
-          }, '[Scrape Stream] All retry attempts exhausted');
+        const isFinalAttempt = attempt >= maxRetries;
+        const giveUp = isFinalAttempt || !classified.retryable;
+
+        if (giveUp) {
+          if (!classified.retryable) {
+            logger.info({ classifiedType: classified.type }, '[Scrape Stream] Not retrying — error classified as non-retryable');
+          } else {
+            logger.error({
+              totalAttempts: attempt + 1,
+              maxRetries,
+            }, '[Scrape Stream] All retry attempts exhausted');
+          }
 
           if (auditId) {
-            await updateScrapeAudit(client, auditId, 'failed', `Failed after ${attempt + 1} attempts: ${scrapeError.message}`, null, attempt);
+            await updateScrapeAudit(
+              client,
+              auditId,
+              'failed',
+              `[${classified.type}] ${classified.originalMessage || scrapeError.message}`,
+              null,
+              attempt,
+            );
           }
 
           if (!res.finished) {
             sendSSE(res, 'error', {
-              message: `Scrape Failed: ${scrapeError.message}`,
-              hint: `Tried ${attempt + 1} time(s). Please try again later or check your credentials.`,
-              attemptsMade: attempt + 1
+              type: classified.type,
+              message: classified.userMessage,
+              originalMessage: classified.originalMessage || scrapeError.message,
+              retryable: classified.retryable,
+              attemptsMade: attempt + 1,
             });
             res.end();
           }

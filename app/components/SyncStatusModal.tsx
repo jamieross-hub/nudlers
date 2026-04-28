@@ -44,6 +44,20 @@ import Dialog from '@mui/material/Dialog';
 import DialogContent from '@mui/material/DialogContent';
 import SendIcon from '@mui/icons-material/Send';
 
+// Tag thrown by SSE 'error' handler so the outer catch can recognise an expected,
+// already-classified failure (e.g. INVALID_CREDENTIALS) and log it quietly instead
+// of emitting a console.error + raw Error stack trace.
+class KnownSyncFailure extends Error {
+  readonly type: string;
+  readonly originalMessage: string | null;
+  constructor(type: string, message: string, originalMessage: string | null) {
+    super(message);
+    this.name = 'KnownSyncFailure';
+    this.type = type;
+    this.originalMessage = originalMessage;
+  }
+}
+
 interface SyncStatusModalProps {
   open: boolean;
   onClose: () => void;
@@ -511,6 +525,7 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
     id_number?: string;
     bank_account_number?: string;
     card6_digits?: string;
+    phone_number?: string;
   }
 
   const prepareCredentials = (account: SyncAccountCredentials, vendor: string) => {
@@ -533,6 +548,14 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
       return {
         userCode: String(userCode),
         password: String(account.password || '')
+      };
+    } else if (vendor === 'onezero') {
+      // OneZero: email lives in the username column. The long-term OTP token is loaded
+      // server-side from the DB by credentialId — never sent through the browser.
+      return {
+        email: String(account.username || ''),
+        password: String(account.password || ''),
+        phoneNumber: String(account.phone_number || '')
       };
     } else if (BANK_VENDORS.includes(vendor)) {
       const bankId = account.username || account.id_number || '';
@@ -746,15 +769,25 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
                     onClose();
                     return;
                   }
-                  const errorWithHint = eventData.hint ? `${eventData.message}\n\n💡 Hint: ${eventData.hint}` : eventData.message;
-                  throw new Error(errorWithHint);
+                  throw new KnownSyncFailure(
+                    eventData.type || 'UNKNOWN',
+                    eventData.message || eventData.originalMessage || 'Sync failed',
+                    eventData.originalMessage || null,
+                  );
               }
             }
           }
         }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
-        logger.error('Batch sync failed', err);
+        if (err instanceof KnownSyncFailure) {
+          logger.warn(`Sync failed: ${err.message}`, { type: err.type, originalMessage: err.originalMessage });
+          setSyncQueue(prev => prev.map(item =>
+            item.status === 'active' ? { ...item, status: 'failed', error: err.message } : item
+          ));
+        } else {
+          logger.error('Batch sync failed', err);
+        }
         setIsSyncing(false);
         setSyncProgress(null);
         setSyncStartTime(null);
@@ -947,7 +980,16 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
                     }
                   }));
                 } else if (currentEvent === 'error') {
-                  throw new Error(eventData.message || 'Sync failed');
+                  if (eventData.type === 'VAULT_LOCKED') {
+                    setIsVaultModalOpen(true);
+                    onClose();
+                    return;
+                  }
+                  throw new KnownSyncFailure(
+                    eventData.type || 'UNKNOWN',
+                    eventData.message || eventData.originalMessage || 'Sync failed',
+                    eventData.originalMessage || null,
+                  );
                 } else if (currentEvent === 'complete') {
                   const finalSummary = eventData.summary || {};
                   const finalDuration = finalSummary.durationSeconds ?? (syncStartTime ? Math.floor((Date.now() - syncStartTime) / 1000) : elapsedSeconds);
@@ -1004,7 +1046,11 @@ const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ open, onClose, width,
           setSyncProgress(null);
           return;
         }
-        logger.error('Failed to sync account', err, { account: account.nickname || account.vendor });
+        if (err instanceof KnownSyncFailure) {
+          logger.warn(`Sync failed: ${err.message}`, { account: account.nickname || account.vendor, type: err.type, originalMessage: err.originalMessage });
+        } else {
+          logger.error('Failed to sync account', err, { account: account.nickname || account.vendor });
+        }
         setSyncQueue(prev => prev.map(item =>
           item.id === account.id ? { ...item, status: 'failed', error: err instanceof Error ? err.message : String(err) } : item
         ));

@@ -29,9 +29,9 @@ const handler = createApiHandler({
         };
       }
       if (req.method === 'POST') {
-        const { vendor, username, password, id_number, card6_digits, nickname, bank_account_number } = req.body;
+        const { vendor, username, password, id_number, card6_digits, nickname, bank_account_number, phone_number } = req.body;
 
-        // Encrypt sensitive data
+        // Encrypt sensitive data. otp_long_term_token is server-managed only — never accepted from clients.
         const encryptedData = {
           vendor,
           username: username ? encrypt(username) : null,
@@ -39,13 +39,14 @@ const handler = createApiHandler({
           id_number: id_number ? encrypt(id_number) : null,
           card6_digits: card6_digits ? encrypt(card6_digits) : null,
           nickname,
-          bank_account_number
+          bank_account_number,
+          phone_number: phone_number ? encrypt(phone_number) : null
         };
 
         return {
           sql: `
-            INSERT INTO vendor_credentials (vendor, username, password, id_number, card6_digits, nickname, bank_account_number)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO vendor_credentials (vendor, username, password, id_number, card6_digits, nickname, bank_account_number, phone_number)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
           `,
           params: [
@@ -55,7 +56,8 @@ const handler = createApiHandler({
             encryptedData.id_number,
             encryptedData.card6_digits,
             encryptedData.nickname,
-            encryptedData.bank_account_number
+            encryptedData.bank_account_number,
+            encryptedData.phone_number
           ]
         };
       }
@@ -69,12 +71,13 @@ const handler = createApiHandler({
         id: row.id,
         vendor: row.vendor,
         username: row.username ? safeDecrypt(row.username) : null,
-        // SECURITY: Never return passwords to the client
-        // password field is omitted for security
+        // SECURITY: Never return password or otp_long_term_token to the client
         id_number: row.id_number ? safeDecrypt(row.id_number) : null,
         card6_digits: row.card6_digits ? safeDecrypt(row.card6_digits) : null,
         nickname: row.nickname,
         bank_account_number: row.bank_account_number,
+        phone_number: row.phone_number ? safeDecrypt(row.phone_number) : null,
+        has_otp_long_term_token: !!row.otp_long_term_token,
         is_active: row.is_active !== false, // Default to true if null
         created_at: row.created_at,
         last_synced_at: row.last_synced_at
