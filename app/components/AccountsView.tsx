@@ -41,6 +41,8 @@ interface Account {
     id_number?: string;
     card6_digits?: string;
     bank_account_number?: string;
+    phone_number?: string;
+    has_otp_long_term_token?: boolean;
     nickname?: string;
     is_active: boolean;
     created_at?: string;
@@ -77,6 +79,7 @@ const AccountsView: React.FC = () => {
         id_number: '',
         card6_digits: '',
         bank_account_number: '',
+        phone_number: '',
         password: '',
         nickname: '',
         id: 0,
@@ -259,6 +262,7 @@ const AccountsView: React.FC = () => {
             id_number: account.id_number || '',
             card6_digits: account.card6_digits || '',
             bank_account_number: account.bank_account_number || '',
+            phone_number: account.phone_number || '',
             password: '',
             nickname: account.nickname || '',
             id: account.id,
@@ -273,6 +277,7 @@ const AccountsView: React.FC = () => {
             id_number: '',
             card6_digits: '',
             bank_account_number: '',
+            phone_number: '',
             password: '',
             nickname: '',
             id: 0,
@@ -451,7 +456,25 @@ const AccountsView: React.FC = () => {
                             ))}
                         </TextField>
 
-                        {(formAccount.vendor === 'visaCal' || formAccount.vendor === 'max' || BANK_VENDORS.includes(formAccount.vendor)) ? (
+                        {formAccount.vendor === 'onezero' ? (
+                            <>
+                                <TextField
+                                    fullWidth
+                                    type="email"
+                                    label="Email"
+                                    value={formAccount.username}
+                                    onChange={(e) => setFormAccount({ ...formAccount, username: e.target.value })}
+                                />
+                                <TextField
+                                    fullWidth
+                                    label="Phone Number (e.g. +972501234567)"
+                                    placeholder="+972501234567"
+                                    value={formAccount.phone_number}
+                                    onChange={(e) => setFormAccount({ ...formAccount, phone_number: e.target.value })}
+                                    helperText="Used to send a one-time SMS code on first sync; subsequent syncs reuse a long-term token."
+                                />
+                            </>
+                        ) : (formAccount.vendor === 'visaCal' || formAccount.vendor === 'max' || BANK_VENDORS.includes(formAccount.vendor)) ? (
                             <TextField
                                 fullWidth
                                 label="Username / ID"
@@ -475,7 +498,7 @@ const AccountsView: React.FC = () => {
                             </Box>
                         )}
 
-                        {STANDARD_BANK_VENDORS.includes(formAccount.vendor) && (
+                        {STANDARD_BANK_VENDORS.includes(formAccount.vendor) && formAccount.vendor !== 'onezero' && (
                             <TextField
                                 fullWidth
                                 label="Account Number"

@@ -25,7 +25,8 @@ import {
 import { generateTransactionIdentifier } from './transactionUtils.js';
 import { createScraper } from 'israeli-bank-scrapers';
 import { handleHapoalimOtp, isOtpPage } from '../../../scrapers/hapoalimOtp.js';
-import { clearPendingOtp } from '../scrapers/otp.js';
+import { clearPendingOtp, waitForOtp } from '../scrapers/otp.js';
+import { installScrapeFetchInterceptor } from './scraperErrors.js';
 import logger from '../../../utils/logger.js';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -236,6 +237,9 @@ export function prepareCredentials(vendor, rawCredentials) {
     card6Digits,
     nickname,
     userCode,
+    email,
+    phoneNumber,
+    otpLongTermToken,
     ...rest
   } = rawCredentials;
 
@@ -247,6 +251,18 @@ export function prepareCredentials(vendor, rawCredentials) {
     const hapoalimUserCode = userCode || username || id || rawCredentials.id_number || '';
     credentials.userCode = String(hapoalimUserCode);
     credentials.password = String(password || '');
+  } else if (vendor === 'onezero') {
+    // OneZero uses email + password and one of two 2FA modes:
+    //   1. otpLongTermToken (re-login without SMS)
+    //   2. phoneNumber + otpCodeRetriever callback (first-time / after token expiry)
+    // The otpCodeRetriever is wired in runScraper(), not here, since it depends on the live progress emitter.
+    credentials.email = String(email || username || '');
+    credentials.password = String(password || '');
+    if (otpLongTermToken) {
+      credentials.otpLongTermToken = String(otpLongTermToken);
+    } else if (phoneNumber) {
+      credentials.phoneNumber = String(phoneNumber);
+    }
   } else if (STANDARD_BANK_VENDORS.includes(vendor) || BEINLEUMI_GROUP_VENDORS.includes(vendor) || vendor === 'igud' || vendor === 'massad' || vendor === 'discount') {
     // Standard bank login (username + password, sometimes num)
     credentials.username = username;
@@ -274,6 +290,13 @@ export function validateCredentials(credentials, vendor) {
   if (vendor === 'hapoalim') {
     if (!credentials.userCode || !credentials.password) {
       throw new Error(`Invalid credentials for ${vendor}: userCode and password are required.`);
+    }
+  } else if (vendor === 'onezero') {
+    if (!credentials.email || !credentials.password) {
+      throw new Error(`Invalid credentials for ${vendor}: email and password are required.`);
+    }
+    if (!credentials.otpLongTermToken && !credentials.phoneNumber) {
+      throw new Error(`Invalid credentials for ${vendor}: either otpLongTermToken or phoneNumber is required.`);
     }
   } else if (vendor === 'isracard' || vendor === 'amex') {
     if (!credentials.id || !credentials.card6Digits || !credentials.password) {
@@ -779,11 +802,18 @@ export async function runScraper(client, scraperOptions, credentials, onProgress
   // OTP flow can take up to MAX_OTP_ATTEMPTS (3) × OTP_USER_TIMEOUT_MS (180s) of user wait
   // plus per-attempt processing — give it generous headroom.
   const isHapoalim = scraperOptions.companyId === 'hapoalim';
+  // OneZero only triggers OTP on first login or after token expiry, but we still budget for
+  // a single 3-minute SMS wait. The scrape's global race promise enforces the real ceiling.
+  const isOneZero = scraperOptions.companyId === 'onezero';
+  const oneZeroNeedsOtp = isOneZero && !credentials?.otpLongTermToken;
   let effectiveTimeout = scraperOptions.timeout || DEFAULT_SCRAPER_TIMEOUT;
   if (isHapoalim) {
     const otpExtraTimeout = 600000; // 10 min headroom for the OTP flow (3 attempts × 3 min + slack)
     effectiveTimeout += otpExtraTimeout;
     logger.info({ originalTimeout: scraperOptions.timeout, effectiveTimeout }, '[Scraper] Extended timeout for Hapoalim OTP');
+  } else if (oneZeroNeedsOtp) {
+    effectiveTimeout += 240000; // 4 min headroom for one SMS round-trip + slack
+    logger.info({ originalTimeout: scraperOptions.timeout, effectiveTimeout }, '[Scraper] Extended timeout for OneZero OTP');
   }
 
   let options = {
@@ -837,7 +867,10 @@ export async function runScraper(client, scraperOptions, credentials, onProgress
     // createScraper code: return new Scraper(options);
     scraper = new CustomVisaCalScraper(options);
   } else {
-    scraper = createScraper(options);
+    const libraryOptions = options.companyId === 'onezero'
+      ? { ...options, companyId: 'oneZero' }
+      : options;
+    scraper = createScraper(libraryOptions);
   }
 
   if (scraper && typeof scraper.onProgress === 'function') {
@@ -867,6 +900,56 @@ export async function runScraper(client, scraperOptions, credentials, onProgress
       return;
     };
   }
+
+  // OneZero: native 2FA wiring.
+  //   - When no long-term token exists, inject otpCodeRetriever that pipes through the
+  //     shared waitForOtp() promise store (same channel the existing UI submits to).
+  //   - Wrap getLongTermTwoFactorToken to capture the new long-term token and emit
+  //     otpSuccess/otpFailed progress events for the UI.
+  let capturedOneZeroToken = null;
+  let oneZeroOtpFailed = false;
+  if (oneZeroNeedsOtp) {
+    const ONEZERO_OTP_USER_TIMEOUT_MS = 180_000;
+    credentials = {
+      ...credentials,
+      otpCodeRetriever: async () => {
+        logger.info('[Scraper] OneZero OTP requested by scraper, awaiting user input');
+        if (onProgress) onProgress(scraperOptions.companyId, { type: 'otpRequired' });
+        try {
+          const code = await waitForOtp('onezero', ONEZERO_OTP_USER_TIMEOUT_MS);
+          if (onProgress) onProgress(scraperOptions.companyId, { type: 'otpSubmitting' });
+          return code;
+        } catch (err) {
+          logger.warn({ error: err.message }, '[Scraper] OneZero OTP wait failed/timed out');
+          if (onProgress) onProgress(scraperOptions.companyId, { type: 'otpFailed' });
+          oneZeroOtpFailed = true;
+          throw err;
+        }
+      }
+    };
+
+    if (typeof scraper.getLongTermTwoFactorToken === 'function') {
+      const originalGet = scraper.getLongTermTwoFactorToken.bind(scraper);
+      scraper.getLongTermTwoFactorToken = async (otpCode) => {
+        const tokenResult = await originalGet(otpCode);
+        if (tokenResult?.success && tokenResult.longTermTwoFactorAuthToken) {
+          capturedOneZeroToken = tokenResult.longTermTwoFactorAuthToken;
+          logger.info('[Scraper] OneZero captured long-term OTP token for persistence');
+          if (onProgress) onProgress(scraperOptions.companyId, { type: 'otpSuccess' });
+        } else {
+          logger.warn({ result: tokenResult }, '[Scraper] OneZero token exchange failed');
+          if (onProgress) onProgress(scraperOptions.companyId, { type: 'otpFailed' });
+          oneZeroOtpFailed = true;
+        }
+        return tokenResult;
+      };
+    }
+  }
+
+  // Capture provider non-2xx responses so the caller can classify failures
+  // even when the upstream library swallows the response (e.g. via destructuring
+  // a missing field on an error body).
+  const fetchInterceptor = installScrapeFetchInterceptor();
 
   logger.info('[Scraper] Starting scrape execution');
 
@@ -1169,6 +1252,17 @@ export async function runScraper(client, scraperOptions, credentials, onProgress
     }
 
     clearActiveSession();
+    if (capturedOneZeroToken) {
+      result.persistentOtpToken = capturedOneZeroToken;
+    }
+    if (oneZeroOtpFailed && !result.success) {
+      // Mark so the run-stream retry loop doesn't re-trigger an SMS for the user.
+      result.otpPending = true;
+    }
+    if (fetchInterceptor.context.lastFailedResponse && !result.success) {
+      result.capturedResponse = fetchInterceptor.context.lastFailedResponse;
+    }
+    fetchInterceptor.restore();
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
@@ -1180,9 +1274,14 @@ export async function runScraper(client, scraperOptions, credentials, onProgress
       vendor: scraperOptions.companyId
     }, '[Scraper] Fatal error during scrape');
 
+    if (fetchInterceptor.context.lastFailedResponse) {
+      err.capturedResponse = fetchInterceptor.context.lastFailedResponse;
+    }
+
     // Ensure we close if error happened during smart scrape or OTP
     if (originalTerminate) await originalTerminate();
     clearActiveSession();
+    fetchInterceptor.restore();
 
     throw err;
   }

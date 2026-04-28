@@ -263,6 +263,40 @@ describe('ScraperUtils', () => {
                 });
             });
         });
+
+        describe('OneZero', () => {
+            it('should map email + password + phoneNumber for first-time login', () => {
+                const result = prepareCredentials('onezero', {
+                    email: 'user@example.com',
+                    password: 'secret',
+                    phoneNumber: '+972501234567'
+                });
+                expect(result.email).toBe('user@example.com');
+                expect(result.password).toBe('secret');
+                expect(result.phoneNumber).toBe('+972501234567');
+                expect(result.otpLongTermToken).toBeUndefined();
+            });
+
+            it('should fall back to username column for email when email is absent', () => {
+                const result = prepareCredentials('onezero', {
+                    username: 'user@example.com',
+                    password: 'secret',
+                    phoneNumber: '+972501234567'
+                });
+                expect(result.email).toBe('user@example.com');
+            });
+
+            it('should pass otpLongTermToken when present and skip phoneNumber', () => {
+                const result = prepareCredentials('onezero', {
+                    email: 'user@example.com',
+                    password: 'secret',
+                    phoneNumber: '+972501234567',
+                    otpLongTermToken: 'long.lived.jwt'
+                });
+                expect(result.otpLongTermToken).toBe('long.lived.jwt');
+                expect(result.phoneNumber).toBeUndefined();
+            });
+        });
     });
 
     describe('validateCredentials', () => {
@@ -301,6 +335,33 @@ describe('ScraperUtils', () => {
                     expect(() => validateCredentials({ id: '123', card6Digits: '123456', password: 'pass' }, vendor))
                         .not.toThrow();
                 });
+            });
+        });
+
+        describe('OneZero', () => {
+            it('should throw when email is missing', () => {
+                expect(() => validateCredentials({ password: 'pass', phoneNumber: '+972501234567' }, 'onezero'))
+                    .toThrow(/email and password are required/);
+            });
+
+            it('should throw when password is missing', () => {
+                expect(() => validateCredentials({ email: 'a@b.com', phoneNumber: '+972501234567' }, 'onezero'))
+                    .toThrow(/email and password are required/);
+            });
+
+            it('should throw when neither phoneNumber nor otpLongTermToken is provided', () => {
+                expect(() => validateCredentials({ email: 'a@b.com', password: 'pass' }, 'onezero'))
+                    .toThrow(/otpLongTermToken or phoneNumber is required/);
+            });
+
+            it('should not throw with email + password + phoneNumber', () => {
+                expect(() => validateCredentials({ email: 'a@b.com', password: 'pass', phoneNumber: '+972501234567' }, 'onezero'))
+                    .not.toThrow();
+            });
+
+            it('should not throw with email + password + otpLongTermToken', () => {
+                expect(() => validateCredentials({ email: 'a@b.com', password: 'pass', otpLongTermToken: 'tok' }, 'onezero'))
+                    .not.toThrow();
             });
         });
 
