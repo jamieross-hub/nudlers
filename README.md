@@ -13,7 +13,7 @@
 <p align="center">
   <em>Automatically aggregate, categorize, and analyze your finances from all Israeli banks and credit cards in one beautiful dashboard.</em>
 </p>
-
+ 
 <p align="center">
   <a href="https://nudlers.com">Website</a> •
   <a href="#-features">Features</a> •
